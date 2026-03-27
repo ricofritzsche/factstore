@@ -1,0 +1,16 @@
+[package]
+name = "factstore-postgres"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+factstore = { path = "../factstore" }
+serde_json = "1"
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-rustls", "json"] }
+tokio = { version = "1", features = ["rt"] }
+
+[dev-dependencies]
+factstore-conformance = { path = "../factstore-conformance" }

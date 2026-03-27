@@ -96,7 +96,18 @@ That means:
 * no speculative abstraction layers
 * no forced OOP structure
 
+## PostgreSQL Tests
+
+`factstore-postgres` integration tests use a portable external PostgreSQL setup.
+
+Set `DATABASE_URL` to a PostgreSQL database where the test user can create schemas, then run:
+
+```bash
+cargo test -p factstore-postgres
+```
+
+If `DATABASE_URL` is not set, the postgres integration tests are skipped.
+
 ## License
 
 TBD
-

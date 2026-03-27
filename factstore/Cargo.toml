@@ -1,0 +1,10 @@
+[package]
+name = "factstore"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde_json = "1"

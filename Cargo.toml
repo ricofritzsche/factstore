@@ -1,0 +1,3 @@
+[workspace]
+members = ["factstore", "factstore-conformance", "factstore-memory", "factstore-postgres"]
+resolver = "2"

@@ -285,17 +285,6 @@ Avoid vague names like:
 - `base_model`
 - `shared_helpers`
 
-# Decision Rules
-
-When choosing between two designs, prefer the one that gives:
-
-- clearer semantics
-- more local reasoning
-- less hidden coupling
-- fewer moving parts
-- easier verification by tests
-
-Duplication is often better than a vague shared abstraction.
 
 # What To Avoid
 
@@ -326,3 +315,56 @@ A task is done when:
 - no speculative abstraction was added
 - no generic architecture drift was introduced
 - the result still fits the project philosophy of facts, context, and stable behavior
+
+# Structural rule for crate internals
+
+Use `src/lib.rs` as a thin module root only.
+
+Once a crate contains real behavior, move implementation out of `src/lib.rs` into ownership-based modules.
+
+`src/lib.rs` should mainly:
+
+- declare modules
+- re-export public types
+- present the crate surface clearly
+
+Do not let `src/lib.rs` become the main implementation file after bootstrap.
+
+Prefer module names that describe owned behavior directly, for example:
+
+- `memory_store.rs`
+- `query.rs`
+- `payload_match.rs`
+- `conditional_append.rs`
+
+Avoid vague names and avoid one giant internal file.
+
+# Structural rule for tests
+
+Use inline tests only for very small bootstrap checks.
+
+When behavior becomes real and semantic, place tests in `<crate>/tests/`.
+
+Organize test files by behavior and let the test layout reflect the owned behavior of the crate.
+
+Examples:
+
+- `tests/append.rs`
+- `tests/query.rs`
+- `tests/conditional_append.rs`
+- `tests/payload_match.rs`
+
+Do not keep a growing semantic test suite inside one production source file.
+
+# Decision rule for structure
+
+Do not confuse better structure with speculative abstraction.
+
+Splitting code into ownership-based modules and moving tests into a dedicated `tests/` folder is required when it improves:
+
+- semantic clarity
+- local reasoning
+- maintainability
+- auditability
+
+As soon as a crate owns meaningful behavior, prefer clear structure over extreme file minimization.

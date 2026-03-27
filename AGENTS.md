@@ -225,6 +225,61 @@ When adding a store:
 
 Do not let a backend redefine the project around its own constraints.
 
+## Module structure inside a crate
+
+`src/lib.rs` is a thin module root.
+
+Do not keep growing implementation in `src/lib.rs` once a crate owns real behavior.
+
+Use `src/lib.rs` only to:
+
+- declare modules
+- re-export the public surface
+- keep the crate entry point readable
+
+Move implementation into ownership-based files as soon as behavior becomes non-trivial.
+
+Prefer file names that describe owned behavior, for example:
+
+- `memory_store.rs`
+- `query.rs`
+- `payload_match.rs`
+- `conditional_append.rs`
+
+Do not use `lib.rs` as a catch-all implementation file beyond the smallest bootstrap.
+
+## Test placement
+
+Use inline `#[cfg(test)]` tests only for tiny local checks during early bootstrap.
+
+Once a crate owns real behavior, prefer tests in `<crate>/tests/`.
+
+Keep tests separated from production code and organized by behavior.
+
+Reflect the production structure in the test layout when useful.
+
+Examples:
+
+- `factstore-memory/tests/append.rs`
+- `factstore-memory/tests/query.rs`
+- `factstore-memory/tests/conditional_append.rs`
+- `factstore-memory/tests/payload_match.rs`
+
+A growing semantic test suite should not stay embedded in one `src/lib.rs`.
+
+## When more files are justified
+
+Creating more files is justified when it improves:
+
+- ownership clarity
+- semantic readability
+- test separation
+- local reasoning
+
+This is not speculative abstraction.
+
+Do not avoid structure when real behavior already exists.
+
 ## What To Avoid
 
 Do not introduce:
