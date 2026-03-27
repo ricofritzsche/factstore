@@ -2,217 +2,243 @@
 
 ## Purpose
 
-This repository builds a Rust event store around **facts, command-context consistency, and multiple store implementations**.
+This repository builds `factstore`, a Rust event store centered on facts, command-context consistency, and multiple store implementations.
 
-The project preserves the semantic contract of the existing [TypeScript eventstore](https://github.com/ricofritzsche/eventstore-typescript) while moving to a more stable and explicit Rust implementation.
+Work in this repository must preserve clear semantics, small local ownership, and stable behavior.
 
-The goal is **not** to port TypeScript line by line.
+The goal is not to recreate familiar enterprise shapes.  
+The goal is to build a durable, understandable system.
 
-## Core Philosophy
+## Project Direction
 
-### Facts first
+`factstore` is built around these ideas:
 
-Events are immutable facts in one append-only log.
+- events are immutable facts
+- facts live in an append-only log
+- consistency is checked against the facts relevant to a command
+- one shared semantic contract can have multiple store implementations
+- the default shape should work well without requiring external infrastructure
+- PostgreSQL remains a first-class store option
 
-### Context defines consistency
+## Working Assumption
 
-Consistency is enforced against the facts relevant to a command.
-Conflict boundaries are defined by queries, not by aggregate ownership.
+Do not rely on external repositories, hidden context, or prior implementations that are not present here.
 
-### One contract, multiple stores
+If a behavior matters, it must be visible in this repository through one or more of these:
 
-The product is the semantic contract.
-Memory, file-based, and PostgreSQL stores may differ internally, but they must preserve the same observable behavior.
+- public types
+- tests
+- docs
+- explicit task instructions
 
-### Explicit semantics
-
-Do not hide important meanings behind overloaded APIs or vague types.
-In particular, keep read cursors and conflict context versions explicit.
-
-### Small durable core
-
-Prefer a strong single-node design over speculative distributed design.
+When in doubt, follow the contract and tests in this repository.
 
 ## Non-Negotiable Rules
 
-### Preserve the shared semantics
+### 1. Preserve semantics
 
-Across store implementations, preserve these semantics unless the user explicitly changes the contract:
+Unless a task explicitly changes the contract, preserve these meanings:
 
-* append-only immutable event records
-* global monotonically increasing sequence numbers
-* consecutive sequence numbers within a committed batch
-* query results ordered by ascending sequence number
-* `minSequenceNumber` as incremental read cursor only
-* context-scoped optimistic locking
-* notifications only after successful persistence
-* subscriber failure never rolls back a successful append
+- event records are append-only
+- sequence numbers are global and monotonically increasing
+- a committed batch receives one consecutive sequence range
+- reads return events in ascending sequence order
+- `minSequenceNumber` is a read cursor only
+- conditional append checks the full conflict context
+- notifications happen only after persistence succeeds
+- subscriber failure does not roll back a successful append
 
-### Do not reintroduce aggregate-centric defaults
+### 2. Keep consistency context-based
 
-Do not reshape this project into:
+Do not reshape the project around aggregate-centric defaults.
 
-* aggregate-root modeling
-* stream-per-entity assumptions
-* entity ownership as the default conflict boundary
-* command handlers built around rich domain object graphs
+Do not assume:
 
-IDs may exist in facts. They do not define the core consistency model.
+- aggregate roots
+- stream-per-entity as the primary model
+- entity ownership as the default conflict boundary
+- rich domain objects as the center of consistency
 
-### Keep contracts first
+IDs may appear in facts. They do not define the core model.
 
-When changing behavior, start from the contract and tests.
+### 3. One contract, multiple stores
 
-Prefer to make semantics explicit in:
+The shared contract is the product.
 
-* public types
-* error types
-* query results
-* append results
-* tests
+Memory, embedded persistent, and PostgreSQL stores may differ internally, but they must preserve the same observable behavior unless the contract explicitly allows a difference.
 
-Do not start with internal abstractions and hope the contract emerges later.
+### 4. Keep important meanings explicit
+
+Do not hide multiple meanings behind one value or one overloaded API.
+
+If the contract distinguishes between returned sequence position and conflict context version, keep that distinction explicit in types, names, tests, and code.
+
+### 5. Keep store mechanics local
+
+Do not leak store-specific implementation details into shared contract types unless they are true cross-store semantics.
+
+Examples that should usually stay local to a store:
+
+- SQL details
+- WAL segment layout
+- mmap internals
+- RocksDB-specific mechanics
+- transaction implementation details
 
 ## Repository Shape
 
-This repository should be easy for humans and coding agents to reason about locally.
+This repository must stay easy to reason about for humans and coding agents.
 
 Prefer:
 
-* explicit crate purposes
-* precise names
-* self-contained implementation units
-* small modules with visible ownership
-* tests near the behavior they prove
+- explicit crate purposes
+- small modules with visible ownership
+- self-contained implementation units
+- tests close to the behavior they prove
+- names that describe what the code owns
 
-Avoid generic technical buckets and vague folders such as:
+Avoid generic technical buckets and vague module names such as:
 
-* `core`
-* `domain`
-* `shared`
-* `common`
-* `utils`
-* `helpers`
-* `services`
-* `managers`
-* `repositories`
-* `models`
-* `entities`
+- `core`
+- `domain`
+- `shared`
+- `common`
+- `utils`
+- `helpers`
+- `services`
+- `managers`
+- `repositories`
+- `models`
+- `entities`
 
-If a new module or crate is introduced, its name must explain **what it owns**, not what technical role it plays.
+If you add a new module or crate, its name must explain what it owns.
 
 ## Naming Rules
 
-Use names that reflect semantics, not architecture fashion.
+Use names that describe semantics directly.
 
 Prefer names like:
 
-* `query`
-* `append`
-* `subscription`
-* `context_version`
-* `sequence_number`
-* `event_record`
-* `memory_store`
-* `postgres_store`
-* `file_store`
+- `event_record`
+- `new_event`
+- `event_query`
+- `query_result`
+- `append_result`
+- `context_version`
+- `last_returned_sequence`
+- `sequence_number`
+- `memory_store`
+- `postgres_store`
+- `file_store`
+- `live_subscription`
 
 Avoid vague names like:
 
-* `engine_utils`
-* `store_manager`
-* `event_service`
-* `base_model`
-* `shared_helpers`
+- `service`
+- `manager`
+- `repository`
+- `helper`
+- `util`
+- `processor`
+- `base_model`
+- `shared_helpers`
 
-## Implementation Rules
+## How To Work In This Repo
 
-### 1. Separate semantic contract from store mechanics
+### Start from behavior
 
-Shared types and traits should define behavior, not internal storage details.
-
-Do not leak:
-
-* SQL assumptions
-* WAL segment details
-* mmap internals
-* RocksDB-specific shapes
-
-into the shared contract unless they are truly cross-store semantics.
-
-### 2. Keep hot-path data simple
-
-Do not force JSON-centric dynamic structures into every hot path if the engine does not need them internally.
-
-### 3. Prefer explicit concurrency models
-
-If a store depends on a concurrency rule, make that rule visible in the implementation and tests.
+Before changing code, state in plain language what must be true after the change.
 
 Examples:
 
-* single-writer sequencing
-* post-commit publication
-* snapshot-based reads
-* transactional conditional append
+- append assigns one consecutive global sequence range
+- `minSequenceNumber` affects reads only
+- conditional append checks the full conflict context
+- notifications happen only after persistence succeeds
 
-### 4. Keep subscriptions outside the commit path
+Do not start by introducing abstractions.
+
+### Decide whether the change is shared or local
+
+Ask:
+
+- is this part of the shared contract?
+- should every store behave this way?
+- or is this only one store's mechanism?
+
+If it is shared:
+- reflect it in shared types and shared tests
+
+If it is local:
+- keep it local to the owning store
+
+### Implement the smallest coherent change
+
+Prefer:
+
+- small local changes
+- direct tests of behavior
+- visible ownership
+- literal names
+
+Avoid:
+
+- speculative extension points
+- internal frameworks
+- wide cleanup refactors with no semantic gain
+- generic wrappers around obvious code
+
+### Keep subscriptions outside the commit path
 
 Notifications happen after persistence succeeds.
-Subscriber behavior must not weaken append correctness.
 
-### 5. Avoid speculative abstractions
-
-Do not add traits, extension points, generic layers, or plugin systems unless there is a concrete implementation need in this repository now.
-
-## Store Implementation Rules
-
-Every store implementation must be judged by the same questions:
-
-* does it preserve the semantic contract?
-* does it expose the same read and append behavior?
-* does it make context-scoped optimistic locking explicit and correct?
-* does it keep post-commit notifications outside the write path?
-* does it have clear operational behavior for its own storage model?
-
-It is acceptable for stores to differ in:
-
-* internal indexing strategy
-* persistence mechanism
-* concurrency implementation
-* recovery model
-* performance profile
-* subscription transport details
-
-It is not acceptable for stores to drift semantically without that being made explicit in the contract and tests.
+Subscriber behavior must never weaken append correctness.
 
 ## Testing Rules
 
 Tests are part of the contract.
 
-Prefer tests that prove:
+Prefer tests that directly prove:
 
-* append ordering
-* sequence allocation
-* batch behavior
-* query semantics
-* conditional append correctness
-* `minSequenceNumber` behavior
-* separation of `last_returned_sequence` and `context_version`
-* notification timing
-* subscriber isolation from commit success
+- append ordering
+- sequence allocation
+- batch behavior
+- query semantics
+- conditional append correctness
+- `minSequenceNumber` behavior
+- separation of returned sequence and context version
+- notification timing
+- subscriber isolation from commit success
 
-When possible, the same semantic test shape should be reusable across multiple store implementations.
+When possible, keep semantic tests reusable across store implementations.
 
-## Change Rules
+## New Store Implementations
 
-When implementing a change:
+When adding a store:
 
-1. identify the semantic behavior involved
-2. identify whether it is shared contract or store-specific behavior
-3. update tests first or alongside the change
-4. implement the smallest coherent change
-5. verify that naming and structure still reflect local ownership
-6. verify that no generic technical bucket was introduced
+1. implement the shared contract first
+2. preserve the same observable query and append behavior
+3. make concurrency behavior explicit
+4. make durability and recovery explicit if the store is persistent
+5. reuse semantic tests wherever possible
+6. add store-specific tests only where the mechanism truly differs
+
+Do not let a backend redefine the project around its own constraints.
+
+## What To Avoid
+
+Do not introduce:
+
+- generic service layers
+- repository patterns
+- manager objects
+- shared helper folders
+- base modules
+- broad “domain” abstractions
+- aggregate-centric assumptions
+- store-specific leakage into shared contract types
+
+Avoid refactors that mostly rearrange code without improving semantics, ownership, or tests.
 
 ## Definition of Done
 
@@ -220,9 +246,10 @@ A task is not done because code compiles.
 
 A task is done when:
 
-* the contract is still clear
-* the implementation is locally understandable
-* tests prove the intended behavior
-* no speculative abstraction was added
-* no generic architecture drift was introduced
-* the result matches the project philosophy in this file
+- the intended behavior is clear in plain language
+- the ownership of the change is obvious
+- the names match the meaning
+- tests prove the intended behavior
+- no speculative abstraction was added
+- no generic architecture drift was introduced
+- the result still fits the philosophy of facts, context, and stable behavior
