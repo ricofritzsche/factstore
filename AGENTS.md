@@ -4,10 +4,9 @@
 
 This repository builds a Rust event store around **facts, command-context consistency, and multiple store implementations**.
 
-The project preserves the semantic contract of the existing TypeScript eventstore while moving to a more stable and explicit Rust implementation.
+The project preserves the semantic contract of the existing [TypeScript eventstore](https://github.com/ricofritzsche/eventstore-typescript) while moving to a more stable and explicit Rust implementation.
 
 The goal is **not** to port TypeScript line by line.
-The goal is to build a smaller, clearer, and more durable system.
 
 ## Core Philosophy
 
