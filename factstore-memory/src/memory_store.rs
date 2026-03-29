@@ -73,7 +73,7 @@ impl EventStore for MemoryStore {
                 event_query
                     .min_sequence_number
                     .is_none_or(|min_sequence_number| {
-                        event_record.sequence_number >= min_sequence_number
+                        event_record.sequence_number > min_sequence_number
                     })
             })
             .cloned()

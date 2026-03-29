@@ -3,6 +3,11 @@ use crate::EventFilter;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EventQuery {
     pub filters: Option<Vec<EventFilter>>,
+    /// Exclusive read cursor for returned rows.
+    ///
+    /// This affects returned rows only. It does not narrow the full conflict
+    /// context version reported by `query`, and it does not narrow the context
+    /// checked by `append_if`.
     pub min_sequence_number: Option<u64>,
 }
 

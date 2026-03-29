@@ -14,3 +14,4 @@ tokio = { version = "1", features = ["rt"] }
 
 [dev-dependencies]
 factstore-conformance = { path = "../factstore-conformance" }
+url = "2"

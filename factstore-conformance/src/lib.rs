@@ -95,9 +95,8 @@ where
         .query(&EventQuery::all().with_min_sequence_number(2))
         .expect("query should succeed");
 
-    assert_eq!(query_result.event_records.len(), 2);
-    assert_eq!(query_result.event_records[0].sequence_number, 2);
-    assert_eq!(query_result.event_records[1].sequence_number, 3);
+    assert_eq!(query_result.event_records.len(), 1);
+    assert_eq!(query_result.event_records[0].sequence_number, 3);
     assert_eq!(query_result.last_returned_sequence_number, Some(3));
     assert_eq!(query_result.current_context_version, Some(3));
 }
@@ -177,8 +176,8 @@ pub fn min_sequence_number_does_not_narrow_current_context_version_for_payload_f
         )
         .expect("query should succeed");
 
-    assert_eq!(query_result.event_records.len(), 1);
-    assert_eq!(query_result.last_returned_sequence_number, Some(3));
+    assert!(query_result.event_records.is_empty());
+    assert_eq!(query_result.last_returned_sequence_number, None);
     assert_eq!(query_result.current_context_version, Some(3));
 }
 
@@ -205,15 +204,15 @@ where
         .query(&EventQuery::for_event_types(["account-opened"]).with_min_sequence_number(3))
         .expect("query should succeed");
 
-    assert_eq!(all_events_query_result.event_records.len(), 2);
+    assert_eq!(all_events_query_result.event_records.len(), 1);
     assert_eq!(
         all_events_query_result.last_returned_sequence_number,
         Some(4)
     );
     assert_eq!(all_events_query_result.current_context_version, Some(4));
 
-    assert_eq!(filtered_query_result.event_records.len(), 1);
-    assert_eq!(filtered_query_result.last_returned_sequence_number, Some(3));
+    assert!(filtered_query_result.event_records.is_empty());
+    assert_eq!(filtered_query_result.last_returned_sequence_number, None);
     assert_eq!(filtered_query_result.current_context_version, Some(3));
 }
 
@@ -454,6 +453,112 @@ where
     assert_eq!(query_result.current_context_version, None);
 }
 
+pub fn empty_event_types_filter_returns_no_events_and_no_context_version<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+
+    store
+        .append(vec![new_event(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("append should succeed");
+
+    let query_result = store
+        .query(&EventQuery::all().with_filters([EventFilter {
+            event_types: Some(Vec::new()),
+            payload_predicates: None,
+        }]))
+        .expect("query should succeed");
+
+    assert!(query_result.event_records.is_empty());
+    assert_eq!(query_result.last_returned_sequence_number, None);
+    assert_eq!(query_result.current_context_version, None);
+}
+
+pub fn conditional_append_uses_empty_event_types_filter_as_empty_context<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+
+    store
+        .append(vec![new_event(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("append should succeed");
+
+    let context_query = EventQuery::all().with_filters([EventFilter {
+        event_types: Some(Vec::new()),
+        payload_predicates: None,
+    }]);
+
+    let append_result = store
+        .append_if(
+            vec![new_event("account-renamed", json!({ "accountId": "a2" }))],
+            &context_query,
+            None,
+        )
+        .expect("conditional append should succeed");
+
+    assert_eq!(append_result.first_sequence_number, 2);
+    assert_eq!(append_result.last_sequence_number, 2);
+    assert_eq!(append_result.committed_count, 1);
+}
+
+pub fn payload_array_match_is_order_insensitive<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+
+    store
+        .append(vec![new_event(
+            "customer-tagged",
+            json!({ "tags": ["vip", "beta"] }),
+        )])
+        .expect("append should succeed");
+
+    let query_result = store
+        .query(&EventQuery::all().with_filters([
+            EventFilter::default().with_payload_predicates([json!({ "tags": ["beta", "vip"] })]),
+        ]))
+        .expect("query should succeed");
+
+    assert_eq!(query_result.event_records.len(), 1);
+    assert_eq!(query_result.current_context_version, Some(1));
+}
+
+pub fn payload_array_object_match_can_match_non_first_payload_element<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+
+    store
+        .append(vec![new_event(
+            "order-created",
+            json!({ "items": [{ "sku": "a" }, { "sku": "b", "qty": 2 }] }),
+        )])
+        .expect("append should succeed");
+
+    let query_result = store
+        .query(&EventQuery::all().with_filters([
+            EventFilter::default().with_payload_predicates([json!({ "items": [{ "sku": "b" }] })]),
+        ]))
+        .expect("query should succeed");
+
+    assert_eq!(query_result.event_records.len(), 1);
+    assert_eq!(query_result.current_context_version, Some(1));
+}
+
 pub fn conditional_append_succeeds_for_matching_payload_filtered_context_version<S, F>(
     create_store: F,
 ) where
@@ -561,4 +666,61 @@ where
     assert_eq!(query_result.event_records[0].sequence_number, 1);
     assert_eq!(query_result.last_returned_sequence_number, Some(1));
     assert_eq!(query_result.current_context_version, Some(1));
+}
+
+pub fn failed_conditional_append_does_not_consume_sequence_numbers_for_later_commits<S, F>(
+    create_store: F,
+) where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+
+    store
+        .append(vec![new_event(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("append should succeed");
+
+    let context_query = EventQuery::all().with_filters([
+        EventFilter::default().with_payload_predicates([json!({ "accountId": "a1" })])
+    ]);
+
+    let conflict = store
+        .append_if(
+            vec![new_event("account-renamed", json!({ "accountId": "a1" }))],
+            &context_query,
+            None,
+        )
+        .expect_err("conditional append should fail");
+
+    assert_eq!(
+        conflict,
+        EventStoreError::ConditionalAppendConflict {
+            expected: None,
+            actual: Some(1),
+        }
+    );
+
+    let append_result = store
+        .append(vec![new_event(
+            "account-credited",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("later append should succeed");
+
+    assert_eq!(append_result.first_sequence_number, 2);
+    assert_eq!(append_result.last_sequence_number, 2);
+    assert_eq!(append_result.committed_count, 1);
+
+    let query_result = store
+        .query(&EventQuery::all())
+        .expect("query should succeed");
+
+    assert_eq!(query_result.event_records.len(), 2);
+    assert_eq!(query_result.event_records[0].sequence_number, 1);
+    assert_eq!(query_result.event_records[1].sequence_number, 2);
+    assert_eq!(query_result.last_returned_sequence_number, Some(2));
+    assert_eq!(query_result.current_context_version, Some(2));
 }

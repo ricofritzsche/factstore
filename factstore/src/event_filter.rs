@@ -2,7 +2,11 @@ use serde_json::Value;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EventFilter {
+    /// `None` means event type is unconstrained.
+    /// `Some(Vec::new())` means this filter matches no event type.
     pub event_types: Option<Vec<String>>,
+    /// `None` means payload is unconstrained.
+    /// `Some(Vec::new())` means this filter matches no payload predicate.
     pub payload_predicates: Option<Vec<Value>>,
 }
 

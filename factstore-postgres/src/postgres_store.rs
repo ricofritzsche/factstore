@@ -36,9 +36,8 @@ impl PostgresStore {
         self.runtime.block_on(async {
             let current_context_version = current_context_version(&self.pool, event_query).await?;
 
-            let mut query_builder: QueryBuilder<'_, Postgres> = QueryBuilder::new(
-                "SELECT sequence_number, event_type, payload FROM factstore_events",
-            );
+            let mut query_builder: QueryBuilder<'_, Postgres> =
+                QueryBuilder::new("SELECT sequence_number, event_type, payload FROM events");
             push_query_conditions(&mut query_builder, event_query, true);
             query_builder.push(" ORDER BY sequence_number ASC");
 
@@ -99,13 +98,17 @@ impl PostgresStore {
             Ok(Ok(append_result))
         })
     }
+
+    fn backend_failure(error: sqlx::Error) -> EventStoreError {
+        EventStoreError::BackendFailure {
+            message: error.to_string(),
+        }
+    }
 }
 
 impl EventStore for PostgresStore {
     fn query(&self, event_query: &EventQuery) -> Result<QueryResult, EventStoreError> {
-        Ok(self
-            .query_inner(event_query)
-            .expect("postgres query should succeed"))
+        self.query_inner(event_query).map_err(Self::backend_failure)
     }
 
     fn append(&self, new_events: Vec<NewEvent>) -> Result<AppendResult, EventStoreError> {
@@ -113,9 +116,7 @@ impl EventStore for PostgresStore {
             return Err(EventStoreError::EmptyAppend);
         }
 
-        Ok(self
-            .append_inner(new_events)
-            .expect("postgres append should succeed"))
+        self.append_inner(new_events).map_err(Self::backend_failure)
     }
 
     fn append_if(
@@ -129,15 +130,18 @@ impl EventStore for PostgresStore {
         }
 
         self.append_if_inner(new_events, context_query, expected_context_version)
-            .expect("postgres conditional append should succeed")
+            .map_err(Self::backend_failure)?
     }
 }
 
 async fn initialize_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
+    // The TypeScript baseline uses BIGSERIAL for sequence_number. This store keeps explicit
+    // sequence assignment instead so committed batches retain one consecutive range without
+    // gaps from failed appends or rolled-back conditional appends.
     sqlx::query(
-        "CREATE TABLE IF NOT EXISTS factstore_events (
+        "CREATE TABLE IF NOT EXISTS events (
             sequence_number BIGINT PRIMARY KEY,
-            timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             event_type TEXT NOT NULL,
             payload JSONB NOT NULL
         )",
@@ -145,11 +149,23 @@ async fn initialize_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     .execute(pool)
     .await?;
 
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type)")
+        .execute(pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_events_occurred_at ON events(occurred_at)")
+        .execute(pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_events_payload_gin ON events USING gin(payload)")
+        .execute(pool)
+        .await?;
+
     Ok(())
 }
 
 async fn lock_events_table(transaction: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
-    sqlx::query("LOCK TABLE factstore_events IN EXCLUSIVE MODE")
+    sqlx::query("LOCK TABLE events IN EXCLUSIVE MODE")
         .execute(transaction.as_mut())
         .await?;
 
@@ -161,17 +177,16 @@ async fn append_records(
     new_events: Vec<NewEvent>,
 ) -> Result<AppendResult, sqlx::Error> {
     let committed_count = new_events.len() as u64;
-    let first_sequence_number = sqlx::query_scalar::<_, i64>(
-        "SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM factstore_events",
-    )
-    .fetch_one(transaction.as_mut())
-    .await? as u64;
+    let first_sequence_number =
+        sqlx::query_scalar::<_, i64>("SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM events")
+            .fetch_one(transaction.as_mut())
+            .await? as u64;
     let last_sequence_number = first_sequence_number + committed_count - 1;
 
     for (offset, new_event) in new_events.into_iter().enumerate() {
         let sequence_number = first_sequence_number + offset as u64;
         sqlx::query(
-            "INSERT INTO factstore_events (sequence_number, event_type, payload)
+            "INSERT INTO events (sequence_number, event_type, payload)
              VALUES ($1, $2, $3)",
         )
         .bind(sequence_number as i64)
@@ -193,7 +208,7 @@ async fn current_context_version(
     event_query: &EventQuery,
 ) -> Result<Option<u64>, sqlx::Error> {
     let mut query_builder: QueryBuilder<'_, Postgres> =
-        QueryBuilder::new("SELECT MAX(sequence_number) FROM factstore_events");
+        QueryBuilder::new("SELECT MAX(sequence_number) FROM events");
     push_query_conditions(&mut query_builder, event_query, false);
 
     Ok(query_builder
@@ -208,7 +223,7 @@ async fn current_context_version_in_transaction(
     event_query: &EventQuery,
 ) -> Result<Option<u64>, sqlx::Error> {
     let mut query_builder: QueryBuilder<'_, Postgres> =
-        QueryBuilder::new("SELECT MAX(sequence_number) FROM factstore_events");
+        QueryBuilder::new("SELECT MAX(sequence_number) FROM events");
     push_query_conditions(&mut query_builder, event_query, false);
 
     Ok(query_builder

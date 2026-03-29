@@ -9,6 +9,9 @@ pub enum EventStoreError {
         expected: Option<u64>,
         actual: Option<u64>,
     },
+    BackendFailure {
+        message: String,
+    },
 }
 
 impl Display for EventStoreError {
@@ -21,12 +24,21 @@ impl Display for EventStoreError {
                     "context version mismatch: expected {expected:?}, actual {actual:?}"
                 )
             }
+            Self::BackendFailure { message } => write!(formatter, "backend failure: {message}"),
         }
     }
 }
 
 impl Error for EventStoreError {}
 
+/// Shared event-store contract across all store implementations.
+///
+/// Load-bearing sequence guarantees:
+/// - sequence numbers are global and monotonically increasing
+/// - one committed batch receives one consecutive sequence range
+/// - failed appends and failed conditional appends must not partially commit a batch
+/// - under the current Rust contract, failed appends also must not consume
+///   sequence numbers that later successful commits would observe
 pub trait EventStore {
     fn query(&self, event_query: &EventQuery) -> Result<QueryResult, EventStoreError>;
 

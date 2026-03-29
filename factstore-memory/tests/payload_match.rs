@@ -51,3 +51,29 @@ fn array_subset_match_with_object_elements_works() {
 fn payload_predicate_no_match_returns_no_events() {
     store_conformance::payload_predicate_no_match_returns_no_events(MemoryStore::new);
 }
+
+#[test]
+fn empty_event_types_filter_returns_no_events_and_no_context_version() {
+    store_conformance::empty_event_types_filter_returns_no_events_and_no_context_version(
+        MemoryStore::new,
+    );
+}
+
+#[test]
+fn conditional_append_uses_empty_event_types_filter_as_empty_context() {
+    store_conformance::conditional_append_uses_empty_event_types_filter_as_empty_context(
+        MemoryStore::new,
+    );
+}
+
+#[test]
+fn payload_array_match_is_order_insensitive() {
+    store_conformance::payload_array_match_is_order_insensitive(MemoryStore::new);
+}
+
+#[test]
+fn payload_array_object_match_can_match_non_first_payload_element() {
+    store_conformance::payload_array_object_match_can_match_non_first_payload_element(
+        MemoryStore::new,
+    );
+}

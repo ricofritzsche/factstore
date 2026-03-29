@@ -21,3 +21,10 @@ fn failed_conditional_append_does_not_append_any_part_of_the_batch() {
         MemoryStore::new,
     );
 }
+
+#[test]
+fn failed_conditional_append_does_not_consume_sequence_numbers_for_later_commits() {
+    store_conformance::failed_conditional_append_does_not_consume_sequence_numbers_for_later_commits(
+        MemoryStore::new,
+    );
+}

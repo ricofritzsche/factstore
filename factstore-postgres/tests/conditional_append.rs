@@ -22,3 +22,10 @@ fn failed_conditional_append_does_not_append_any_part_of_the_batch() {
         store_conformance::failed_conditional_append_does_not_append_any_part_of_the_batch,
     );
 }
+
+#[test]
+fn failed_conditional_append_does_not_consume_sequence_numbers_for_later_commits() {
+    support::run_store_test(
+        store_conformance::failed_conditional_append_does_not_consume_sequence_numbers_for_later_commits,
+    );
+}

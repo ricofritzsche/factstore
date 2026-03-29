@@ -35,8 +35,10 @@ pub(crate) fn push_query_conditions(
                 query_builder.push(" WHERE ");
             }
 
+            // The current Rust contract treats min_sequence_number as an
+            // exclusive read cursor for returned rows.
             query_builder
-                .push("sequence_number >= ")
+                .push("sequence_number > ")
                 .push_bind(min_sequence_number as i64);
         }
     }
@@ -49,7 +51,11 @@ fn push_filter_condition(
     let mut wrote_condition = false;
 
     if let Some(event_types) = &event_filter.event_types {
-        if !event_types.is_empty() {
+        if event_types.is_empty() {
+            // `Some(Vec::new())` is an explicit empty match set, not omission.
+            query_builder.push("FALSE");
+            return;
+        } else {
             query_builder
                 .push("(")
                 .push("event_type = ANY(")
