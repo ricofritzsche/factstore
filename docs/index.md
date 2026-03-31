@@ -1,8 +1,26 @@
 # FACTSTR
 
-FACTSTR is a Rust event store built around facts, query-defined consistency context, and multiple store implementations behind one shared contract.
+One Rust contract for facts, queries, and live subscriptions.
 
-The current implemented scope includes the shared contract, the memory store, the PostgreSQL store, append/query/conditional append behavior, and live subscriptions. It does not yet include embedded persistence, durable subscriber cursors, replay, or transport adapters.
+## Current status
+
+**Runtime**  
+Rust
+
+**Stores**  
+Memory · PostgreSQL
+
+**Implemented now**  
+Append · Query · Conditional append · Live subscriptions
+
+**Documentation**  
+GitHub Pages docs
+
+**Planned next**  
+Embedded persistence · Durable subscriber cursors · Replay
+
+**License**  
+Apache-2.0 / MIT
 
 - [Getting Started](getting-started.md)
 - [Examples](examples.md)
