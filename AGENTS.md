@@ -33,6 +33,22 @@ If a behavior matters, it must be visible in this repository through one or more
 
 When in doubt, follow the contract and tests in this repository.
 
+## Reference Baseline
+
+This repository is the primary source of truth for behaviors that are already explicit here in:
+
+- public types
+- tests
+- docs
+- explicit task instructions
+
+There is one narrow exception:
+
+- the existing TypeScript eventstore repository is an allowed historical semantic reference for behaviors this Rust project intentionally preserves but does not yet fully encode here
+- this exception is especially relevant for subscriptions and notifiers
+- use that reference to preserve semantics, not to copy architecture, folder layout, or runtime design
+- once a behavior is explicit in Rust public types, tests, and docs, this repository becomes the primary source of truth for that behavior
+
 ## Non-Negotiable Rules
 
 ### 1. Preserve semantics
@@ -45,8 +61,12 @@ Unless a task explicitly changes the contract, preserve these meanings:
 - reads return events in ascending sequence order
 - `minSequenceNumber` is a read cursor only
 - conditional append checks the full conflict context
+- live subscriptions are part of the intended shared contract, not optional add-on behavior
 - notifications happen only after persistence succeeds
+- notification delivery preserves commit order
+- one committed append batch is delivered as one committed batch unless the contract is explicitly changed later
 - subscriber failure does not roll back a successful append
+- subscriber isolation is preserved
 
 ### 2. Keep consistency context-based
 
@@ -194,6 +214,10 @@ Notifications happen after persistence succeeds.
 
 Subscriber behavior must never weaken append correctness.
 
+Subscriber logic must stay outside the commit path.
+
+Notifier mechanisms remain store-local unless a cross-store semantic requires a shared contract type.
+
 ## Testing Rules
 
 Tests are part of the contract.
@@ -208,6 +232,7 @@ Prefer tests that directly prove:
 - `minSequenceNumber` behavior
 - separation of returned sequence and context version
 - notification timing
+- notification delivery order
 - subscriber isolation from commit success
 
 When possible, keep semantic tests reusable across store implementations.
@@ -224,6 +249,26 @@ When adding a store:
 6. add store-specific tests only where the mechanism truly differs
 
 Do not let a backend redefine the project around its own constraints.
+
+## Subscriptions and Notifiers
+
+Live subscriptions are part of the intended contract direction.
+
+Preserve these meanings unless a task explicitly changes them:
+
+- notifications happen only after persistence succeeds
+- delivery semantics preserve committed sequence order
+- multiple subscribers are supported
+- subscriber failure does not roll back a successful append
+- subscriber logic is isolated from commit success
+- live subscriptions are non-durable delivery
+- durable subscriber cursors and replay are later work, separate from first live subscription support
+
+When implementing subscriptions:
+
+- update shared contract wording and semantic tests before or together with store mechanics
+- keep observable behavior explicit
+- keep notifier internals local to the owning store unless a true cross-store semantic requires shared contract surface
 
 ## Module structure inside a crate
 

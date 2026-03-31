@@ -76,8 +76,9 @@ The project must support:
 * appending events conditionally against a context version
 * global monotonically increasing sequence numbers
 * ordered reads by ascending sequence number
-* post-commit live subscriptions
-* later durable subscriber cursors and replay
+* post-commit live subscriptions as a first-class part of the shared contract direction
+* multiple live subscribers observing the same committed facts
+* later durable subscriber cursors and replay as separate work after first live subscription support
 
 ### Semantic goals
 
@@ -91,6 +92,10 @@ The Rust implementation must preserve these core semantics from the TypeScript i
 * context-scoped optimistic locking
 * notifications after successful persistence
 * subscriber failure does not roll back the append
+* subscriber isolation from one another
+* live subscription delivery ordered by committed sequence order
+* one committed append batch delivered as one committed batch unless the contract is explicitly changed later
+* live subscriptions as non-durable delivery, with durable replay and subscriber cursors treated separately
 
 ### Operational goals
 
@@ -165,6 +170,15 @@ The contract should explicitly separate:
 
 This removes ambiguity and makes incremental reads and optimistic locking easier to reason about.
 
+The shared contract direction for subscriptions should make these observable semantics explicit:
+
+* notifications happen only after successful persistence
+* delivery preserves committed sequence order
+* one committed append batch is delivered as one committed batch
+* multiple subscribers may observe the same committed batch
+* subscriber failure does not roll back a successful append
+* notifier internals remain store-local unless a true cross-store semantic requires a shared type
+
 ## Architectural Direction
 
 The Rust codebase should likely be structured around a shared contract and separate store implementations.
@@ -175,10 +189,12 @@ Examples of major parts:
 * memory store
 * file or embedded store
 * postgres store
-* subscription support
+* subscription support with store-local notifier internals
 * optional transport adapters later
 
 The repository should not be structured around generic horizontal layers such as services, repositories, managers, helpers, or shared business logic buckets.
+
+The Rust project preserves the useful subscription and notifier semantics of the TypeScript eventstore, but it is not meant to copy the TypeScript runtime design or internal notifier structure.
 
 ## Delivery Plan
 
@@ -190,6 +206,7 @@ Build the semantic foundation:
 * memory store
 * test suite proving preserved semantics
 * explicit query result model with context version
+* explicit subscription/notifier contract direction so future work does not lose post-commit delivery semantics
 
 ### Phase 2
 
