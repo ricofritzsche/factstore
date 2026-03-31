@@ -53,27 +53,27 @@ Result of one committed append batch.
 
 This makes the committed sequence range explicit without overloading it with context-version meaning.
 
-## `LiveSubscription`
+## `HandleEvents`
 
-Live-only subscription handle for future committed batches.
+Callback type for live subscriptions.
 
-- `next_batch()` blocks until the next delivered committed batch is available or the subscription closes
-- `try_next_batch()` checks without blocking and returns a batch, `Empty`, or `Closed`
-- each delivered item is `Vec<EventRecord>`
-- dropping the handle ends future delivery for that subscriber
+- receives one delivered committed batch as `Vec<EventRecord>`
+- returns `Result<(), SubscriptionHandlerError>`
+- is used by both `subscribe_all(...)` and `subscribe_to(...)`
 
-## `LiveSubscriptionRecvError`
+## `SubscriptionHandlerError`
 
-Blocking receive error for `LiveSubscription::next_batch()`.
+Error returned by a subscription handler.
 
-- currently indicates the subscription is closed
+- represents handler-local failure
+- does not roll back a successful append
 
-## `TryLiveSubscriptionRecvError`
+## `EventSubscription`
 
-Non-blocking receive error for `LiveSubscription::try_next_batch()`.
+Active live subscription registration.
 
-- `Empty` means no committed batch is ready
-- `Closed` means the subscription is closed
+- has a stable id
+- `unsubscribe()` stops future delivery for that subscriber
 
 ## `EventStore`
 
@@ -85,12 +85,10 @@ Shared runtime contract across store implementations.
 - `subscribe_all`
 - `subscribe_to`
 
-`subscribe()` may still exist as a compatibility alias for `subscribe_all()`, but the preferred public subscription methods are `subscribe_all()` and `subscribe_to(&EventQuery)`.
-
 Memory and PostgreSQL must preserve the same observable contract behavior.
 
-- `subscribe_all()` delivers all future committed batches
-- `subscribe_to(&EventQuery)` delivers only future committed facts that match that query, preserving original committed order inside each delivered batch
+- `subscribe_all(handle)` delivers all future committed batches to the handler
+- `subscribe_to(&EventQuery, handle)` delivers only future committed facts that match that query, preserving original committed order inside each delivered batch
 
 ## `EventStoreError`
 

@@ -1,10 +1,75 @@
 use factstore::{
-    EventFilter, EventQuery, EventStore, EventStoreError, NewEvent, TryLiveSubscriptionRecvError,
+    EventFilter, EventQuery, EventRecord, EventStore, EventStoreError, HandleEvents, NewEvent,
+    SubscriptionHandlerError,
 };
 use serde_json::{Value, json};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
 fn new_event(event_type: &str, payload: Value) -> NewEvent {
     NewEvent::new(event_type, payload)
+}
+
+fn recording_handle(delivery_log: Arc<Mutex<Vec<Vec<EventRecord>>>>) -> HandleEvents {
+    Arc::new(move |event_records| {
+        delivery_log
+            .lock()
+            .expect("delivery log lock should succeed")
+            .push(event_records);
+        Ok(())
+    })
+}
+
+fn failing_handle() -> HandleEvents {
+    Arc::new(|_| {
+        Err(SubscriptionHandlerError::new(
+            "expected test handler failure",
+        ))
+    })
+}
+
+fn delivered_batches(delivery_log: &Arc<Mutex<Vec<Vec<EventRecord>>>>) -> Vec<Vec<EventRecord>> {
+    delivery_log
+        .lock()
+        .expect("delivery log lock should succeed")
+        .clone()
+}
+
+fn wait_for_delivery_count(
+    delivery_log: &Arc<Mutex<Vec<Vec<EventRecord>>>>,
+    expected_count: usize,
+) -> Vec<Vec<EventRecord>> {
+    let deadline = Instant::now() + Duration::from_secs(1);
+
+    loop {
+        let delivered_batches = delivered_batches(delivery_log);
+        if delivered_batches.len() == expected_count {
+            return delivered_batches;
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "expected {expected_count} delivered batches, got {}",
+            delivered_batches.len()
+        );
+
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn assert_no_delivery(delivery_log: &Arc<Mutex<Vec<Vec<EventRecord>>>>) {
+    let deadline = Instant::now() + Duration::from_millis(100);
+
+    while Instant::now() < deadline {
+        let delivered_batches = delivered_batches(delivery_log);
+        assert!(
+            delivered_batches.is_empty(),
+            "expected no delivered batches, got {}",
+            delivered_batches.len()
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
 }
 
 pub fn append_assigns_consecutive_global_sequence_numbers<S, F>(create_store: F)
@@ -51,13 +116,16 @@ where
     assert_eq!(error, EventStoreError::EmptyAppend);
 }
 
-pub fn subscribe_receives_a_future_committed_append_batch<S, F>(create_store: F)
+pub fn subscribe_all_callback_receives_a_future_committed_batch<S, F>(create_store: F)
 where
     S: EventStore,
     F: Fn() -> S,
 {
     let store = create_store();
-    let subscription = store.subscribe_all().expect("subscribe_all should succeed");
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let _subscription = store
+        .subscribe_all(recording_handle(Arc::clone(&delivery_log)))
+        .expect("subscribe_all should succeed");
 
     store
         .append(vec![
@@ -66,12 +134,11 @@ where
         ])
         .expect("append should succeed");
 
-    let committed_batch = subscription
-        .next_batch()
-        .expect("subscription should receive a batch");
-    assert_eq!(committed_batch.len(), 2);
-    assert_eq!(committed_batch[0].sequence_number, 1);
-    assert_eq!(committed_batch[1].sequence_number, 2);
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 1);
+    assert_eq!(delivered_batches.len(), 1);
+    assert_eq!(delivered_batches[0].len(), 2);
+    assert_eq!(delivered_batches[0][0].sequence_number, 1);
+    assert_eq!(delivered_batches[0][1].sequence_number, 2);
 }
 
 pub fn subscribe_does_not_replay_historical_events<S, F>(create_store: F)
@@ -80,6 +147,7 @@ where
     F: Fn() -> S,
 {
     let store = create_store();
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
 
     store
         .append(vec![new_event(
@@ -88,12 +156,11 @@ where
         )])
         .expect("append should succeed");
 
-    let subscription = store.subscribe_all().expect("subscribe_all should succeed");
+    let _subscription = store
+        .subscribe_all(recording_handle(Arc::clone(&delivery_log)))
+        .expect("subscribe_all should succeed");
 
-    assert_eq!(
-        subscription.try_next_batch(),
-        Err(TryLiveSubscriptionRecvError::Empty)
-    );
+    assert!(delivered_batches(&delivery_log).is_empty());
 }
 
 pub fn two_subscribers_receive_the_same_committed_batches<S, F>(create_store: F)
@@ -102,11 +169,13 @@ where
     F: Fn() -> S,
 {
     let store = create_store();
-    let first_subscription = store
-        .subscribe_all()
+    let first_delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let second_delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let _first_subscription = store
+        .subscribe_all(recording_handle(Arc::clone(&first_delivery_log)))
         .expect("first subscribe_all should succeed");
-    let second_subscription = store
-        .subscribe_all()
+    let _second_subscription = store
+        .subscribe_all(recording_handle(Arc::clone(&second_delivery_log)))
         .expect("second subscribe_all should succeed");
 
     store
@@ -116,16 +185,10 @@ where
         )])
         .expect("append should succeed");
 
-    let first_batch = first_subscription
-        .next_batch()
-        .expect("first subscription should receive a batch");
-    let second_batch = second_subscription
-        .next_batch()
-        .expect("second subscription should receive a batch");
-
-    assert_eq!(first_batch, second_batch);
-    assert_eq!(first_batch.len(), 1);
-    assert_eq!(first_batch[0].sequence_number, 1);
+    assert_eq!(
+        wait_for_delivery_count(&first_delivery_log, 1),
+        wait_for_delivery_count(&second_delivery_log, 1)
+    );
 }
 
 pub fn subscription_batches_arrive_in_commit_order<S, F>(create_store: F)
@@ -134,7 +197,10 @@ where
     F: Fn() -> S,
 {
     let store = create_store();
-    let subscription = store.subscribe_all().expect("subscribe_all should succeed");
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let _subscription = store
+        .subscribe_all(recording_handle(Arc::clone(&delivery_log)))
+        .expect("subscribe_all should succeed");
 
     store
         .append(vec![new_event(
@@ -149,23 +215,19 @@ where
         )])
         .expect("second append should succeed");
 
-    let first_batch = subscription
-        .next_batch()
-        .expect("first batch should arrive");
-    let second_batch = subscription
-        .next_batch()
-        .expect("second batch should arrive");
-
-    assert_eq!(first_batch[0].sequence_number, 1);
-    assert_eq!(second_batch[0].sequence_number, 2);
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 2);
+    assert_eq!(delivered_batches.len(), 2);
+    assert_eq!(delivered_batches[0][0].sequence_number, 1);
+    assert_eq!(delivered_batches[1][0].sequence_number, 2);
 }
 
-pub fn append_if_conflict_emits_no_subscription_batch<S, F>(create_store: F)
+pub fn append_if_conflict_emits_no_delivery<S, F>(create_store: F)
 where
     S: EventStore,
     F: Fn() -> S,
 {
     let store = create_store();
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
 
     store
         .append(vec![new_event(
@@ -174,7 +236,9 @@ where
         )])
         .expect("append should succeed");
 
-    let subscription = store.subscribe_all().expect("subscribe_all should succeed");
+    let _subscription = store
+        .subscribe_all(recording_handle(Arc::clone(&delivery_log)))
+        .expect("subscribe_all should succeed");
     let context_query = EventQuery::all().with_filters([
         EventFilter::default().with_payload_predicates([json!({ "accountId": "a1" })])
     ]);
@@ -194,22 +258,25 @@ where
             actual: Some(1),
         }
     );
-    assert_eq!(
-        subscription.try_next_batch(),
-        Err(TryLiveSubscriptionRecvError::Empty)
-    );
+    assert_no_delivery(&delivery_log);
 }
 
-pub fn dropping_one_subscription_does_not_break_append_for_others<S, F>(create_store: F)
+pub fn unsubscribing_one_subscriber_does_not_break_delivery_for_others<S, F>(create_store: F)
 where
     S: EventStore,
     F: Fn() -> S,
 {
     let store = create_store();
-    let dropped_subscription = store.subscribe_all().expect("subscribe_all should succeed");
-    let active_subscription = store.subscribe_all().expect("subscribe_all should succeed");
+    let dropped_delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let active_delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let dropped_subscription = store
+        .subscribe_all(recording_handle(Arc::clone(&dropped_delivery_log)))
+        .expect("subscribe_all should succeed");
+    let _active_subscription = store
+        .subscribe_all(recording_handle(Arc::clone(&active_delivery_log)))
+        .expect("subscribe_all should succeed");
 
-    drop(dropped_subscription);
+    dropped_subscription.unsubscribe();
 
     let append_result = store
         .append(vec![new_event(
@@ -220,12 +287,8 @@ where
 
     assert_eq!(append_result.first_sequence_number, 1);
     assert_eq!(append_result.last_sequence_number, 1);
-
-    let committed_batch = active_subscription
-        .next_batch()
-        .expect("active subscription should still receive a batch");
-    assert_eq!(committed_batch.len(), 1);
-    assert_eq!(committed_batch[0].sequence_number, 1);
+    assert_no_delivery(&dropped_delivery_log);
+    assert_eq!(wait_for_delivery_count(&active_delivery_log, 1).len(), 1);
 }
 
 pub fn subscription_delivery_preserves_the_committed_batch_shape<S, F>(create_store: F)
@@ -234,7 +297,10 @@ where
     F: Fn() -> S,
 {
     let store = create_store();
-    let subscription = store.subscribe_all().expect("subscribe_all should succeed");
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let _subscription = store
+        .subscribe_all(recording_handle(Arc::clone(&delivery_log)))
+        .expect("subscribe_all should succeed");
 
     store
         .append(vec![
@@ -243,13 +309,11 @@ where
         ])
         .expect("append should succeed");
 
-    let committed_batch = subscription
-        .next_batch()
-        .expect("subscription should receive a batch");
-
-    assert_eq!(committed_batch.len(), 2);
-    assert_eq!(committed_batch[0].sequence_number, 1);
-    assert_eq!(committed_batch[1].sequence_number, 2);
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 1);
+    assert_eq!(delivered_batches.len(), 1);
+    assert_eq!(delivered_batches[0].len(), 2);
+    assert_eq!(delivered_batches[0][0].sequence_number, 1);
+    assert_eq!(delivered_batches[0][1].sequence_number, 2);
 }
 
 pub fn filtered_subscription_with_event_type_receives_only_matching_future_events<S, F>(
@@ -259,8 +323,12 @@ pub fn filtered_subscription_with_event_type_receives_only_matching_future_event
     F: Fn() -> S,
 {
     let store = create_store();
-    let subscription = store
-        .subscribe_to(&EventQuery::for_event_types(["account-opened"]))
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let _subscription = store
+        .subscribe_to(
+            &EventQuery::for_event_types(["account-opened"]),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
         .expect("subscribe_to should succeed");
 
     store
@@ -271,9 +339,9 @@ pub fn filtered_subscription_with_event_type_receives_only_matching_future_event
         ])
         .expect("append should succeed");
 
-    let committed_batch = subscription
-        .next_batch()
-        .expect("filtered subscription should receive a batch");
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 1);
+    assert_eq!(delivered_batches.len(), 1);
+    let committed_batch = &delivered_batches[0];
 
     assert_eq!(committed_batch.len(), 2);
     assert_eq!(committed_batch[0].sequence_number, 1);
@@ -292,10 +360,14 @@ pub fn filtered_subscription_with_payload_predicate_receives_only_matching_futur
     F: Fn() -> S,
 {
     let store = create_store();
-    let subscription = store
-        .subscribe_to(&EventQuery::all().with_filters([
-            EventFilter::default().with_payload_predicates([json!({ "accountId": "a1" })]),
-        ]))
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let _subscription = store
+        .subscribe_to(
+            &EventQuery::all().with_filters([
+                EventFilter::default().with_payload_predicates([json!({ "accountId": "a1" })])
+            ]),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
         .expect("subscribe_to should succeed");
 
     store
@@ -306,9 +378,9 @@ pub fn filtered_subscription_with_payload_predicate_receives_only_matching_futur
         ])
         .expect("append should succeed");
 
-    let committed_batch = subscription
-        .next_batch()
-        .expect("filtered subscription should receive a batch");
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 1);
+    assert_eq!(delivered_batches.len(), 1);
+    let committed_batch = &delivered_batches[0];
 
     assert_eq!(committed_batch.len(), 2);
     assert_eq!(committed_batch[0].sequence_number, 1);
@@ -321,8 +393,12 @@ where
     F: Fn() -> S,
 {
     let store = create_store();
-    let subscription = store
-        .subscribe_to(&EventQuery::for_event_types(["account-opened"]))
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let _subscription = store
+        .subscribe_to(
+            &EventQuery::for_event_types(["account-opened"]),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
         .expect("subscribe_to should succeed");
 
     store
@@ -332,10 +408,7 @@ where
         )])
         .expect("append should succeed");
 
-    assert_eq!(
-        subscription.try_next_batch(),
-        Err(TryLiveSubscriptionRecvError::Empty)
-    );
+    assert_no_delivery(&delivery_log);
 }
 
 pub fn filtered_subscription_mixed_committed_batch_yields_one_filtered_batch<S, F>(create_store: F)
@@ -344,8 +417,12 @@ where
     F: Fn() -> S,
 {
     let store = create_store();
-    let subscription = store
-        .subscribe_to(&EventQuery::for_event_types(["account-opened"]))
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let _subscription = store
+        .subscribe_to(
+            &EventQuery::for_event_types(["account-opened"]),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
         .expect("subscribe_to should succeed");
 
     store
@@ -356,9 +433,9 @@ where
         ])
         .expect("append should succeed");
 
-    let committed_batch = subscription
-        .next_batch()
-        .expect("filtered subscription should receive a batch");
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 1);
+    assert_eq!(delivered_batches.len(), 1);
+    let committed_batch = &delivered_batches[0];
 
     assert_eq!(committed_batch.len(), 2);
     assert_eq!(committed_batch[0].sequence_number, 1);
@@ -371,10 +448,14 @@ where
     F: Fn() -> S,
 {
     let store = create_store();
-    let subscription = store
-        .subscribe_to(&EventQuery::all().with_filters([
-            EventFilter::default().with_payload_predicates([json!({ "accountId": "a1" })]),
-        ]))
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let _subscription = store
+        .subscribe_to(
+            &EventQuery::all().with_filters([
+                EventFilter::default().with_payload_predicates([json!({ "accountId": "a1" })])
+            ]),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
         .expect("subscribe_to should succeed");
 
     store
@@ -386,9 +467,9 @@ where
         ])
         .expect("append should succeed");
 
-    let committed_batch = subscription
-        .next_batch()
-        .expect("filtered subscription should receive a batch");
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 1);
+    assert_eq!(delivered_batches.len(), 1);
+    let committed_batch = &delivered_batches[0];
 
     assert_eq!(committed_batch.len(), 3);
     assert_eq!(
@@ -400,12 +481,13 @@ where
     );
 }
 
-pub fn append_if_conflict_emits_no_filtered_subscription_batch<S, F>(create_store: F)
+pub fn append_if_conflict_emits_no_filtered_delivery<S, F>(create_store: F)
 where
     S: EventStore,
     F: Fn() -> S,
 {
     let store = create_store();
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
 
     store
         .append(vec![new_event(
@@ -414,10 +496,13 @@ where
         )])
         .expect("append should succeed");
 
-    let subscription = store
-        .subscribe_to(&EventQuery::all().with_filters([
-            EventFilter::default().with_payload_predicates([json!({ "accountId": "a1" })]),
-        ]))
+    let _subscription = store
+        .subscribe_to(
+            &EventQuery::all().with_filters([
+                EventFilter::default().with_payload_predicates([json!({ "accountId": "a1" })])
+            ]),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
         .expect("subscribe_to should succeed");
     let context_query = EventQuery::all().with_filters([
         EventFilter::default().with_payload_predicates([json!({ "accountId": "a1" })])
@@ -438,10 +523,7 @@ where
             actual: Some(1),
         }
     );
-    assert_eq!(
-        subscription.try_next_batch(),
-        Err(TryLiveSubscriptionRecvError::Empty)
-    );
+    assert_no_delivery(&delivery_log);
 }
 
 pub fn differently_filtered_subscribers_observe_the_same_commit_differently<S, F>(create_store: F)
@@ -450,13 +532,21 @@ where
     F: Fn() -> S,
 {
     let store = create_store();
-    let event_type_subscription = store
-        .subscribe_to(&EventQuery::for_event_types(["account-opened"]))
+    let event_type_delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let payload_delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let _event_type_subscription = store
+        .subscribe_to(
+            &EventQuery::for_event_types(["account-opened"]),
+            recording_handle(Arc::clone(&event_type_delivery_log)),
+        )
         .expect("subscribe_to should succeed");
-    let payload_subscription = store
-        .subscribe_to(&EventQuery::all().with_filters([
-            EventFilter::default().with_payload_predicates([json!({ "accountId": "a2" })]),
-        ]))
+    let _payload_subscription = store
+        .subscribe_to(
+            &EventQuery::all().with_filters([
+                EventFilter::default().with_payload_predicates([json!({ "accountId": "a2" })])
+            ]),
+            recording_handle(Arc::clone(&payload_delivery_log)),
+        )
         .expect("subscribe_to should succeed");
 
     store
@@ -467,27 +557,60 @@ where
         ])
         .expect("append should succeed");
 
-    let event_type_batch = event_type_subscription
-        .next_batch()
-        .expect("event-type subscription should receive a batch");
-    let payload_batch = payload_subscription
-        .next_batch()
-        .expect("payload subscription should receive a batch");
+    let event_type_batches = wait_for_delivery_count(&event_type_delivery_log, 1);
+    let payload_batches = wait_for_delivery_count(&payload_delivery_log, 1);
+    assert_eq!(event_type_batches.len(), 1);
+    assert_eq!(payload_batches.len(), 1);
 
     assert_eq!(
-        event_type_batch
+        event_type_batches[0]
             .iter()
             .map(|event_record| event_record.sequence_number)
             .collect::<Vec<_>>(),
         vec![1, 3]
     );
     assert_eq!(
-        payload_batch
+        payload_batches[0]
             .iter()
             .map(|event_record| event_record.sequence_number)
             .collect::<Vec<_>>(),
         vec![2, 3]
     );
+}
+
+pub fn handler_failure_does_not_roll_back_append_success<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+    let successful_delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let _failing_subscription = store
+        .subscribe_all(failing_handle())
+        .expect("subscribe_all should succeed");
+    let _successful_subscription = store
+        .subscribe_all(recording_handle(Arc::clone(&successful_delivery_log)))
+        .expect("subscribe_all should succeed");
+
+    let append_result = store
+        .append(vec![new_event(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("append should still succeed");
+
+    assert_eq!(append_result.first_sequence_number, 1);
+    assert_eq!(append_result.last_sequence_number, 1);
+
+    let query_result = store
+        .query(&EventQuery::all())
+        .expect("query should succeed");
+    assert_eq!(query_result.event_records.len(), 1);
+
+    let successful_delivery_log = wait_for_delivery_count(&successful_delivery_log, 1);
+    assert_eq!(successful_delivery_log.len(), 1);
+    assert_eq!(successful_delivery_log[0].len(), 1);
+    assert_eq!(successful_delivery_log[0][0].sequence_number, 1);
 }
 
 pub fn query_returns_events_in_ascending_order<S, F>(create_store: F)

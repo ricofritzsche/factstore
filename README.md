@@ -72,9 +72,9 @@ The current public contract types are:
 - `EventQuery`
 - `QueryResult`
 - `AppendResult`
-- `LiveSubscription`
-- `LiveSubscriptionRecvError`
-- `TryLiveSubscriptionRecvError`
+- `HandleEvents`
+- `SubscriptionHandlerError`
+- `EventSubscription`
 - `EventStore`
 - `EventStoreError`
 
@@ -114,15 +114,16 @@ These are the load-bearing behaviors implemented today.
 ### Live Subscriptions
 
 - subscriptions are live only and do not replay history
-- `subscribe_all()` observes all future committed batches
-- `subscribe_to(&EventQuery)` observes only future committed facts that match that query
+- `subscribe_all(handle)` invokes a handler for all future committed batches
+- `subscribe_to(&EventQuery, handle)` invokes a handler only for future committed facts that match that query
 - notifications happen only after a successful commit
 - each committed append batch is delivered as one batch
 - mixed committed batches are delivered as one filtered batch when matches exist
 - delivery order follows committed global sequence order
 - failed conditional append delivers nothing
 - multiple subscribers can observe the same committed batches
-- dropping one subscription does not break append for others
+- `EventSubscription::unsubscribe()` stops future delivery for that subscriber
+- handler failure does not roll back append success
 
 ## Query Model
 

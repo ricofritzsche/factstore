@@ -1,13 +1,13 @@
 use std::io;
 use std::sync::{
-    Mutex,
+    Arc, Mutex,
     mpsc::{self, Receiver, Sender, SyncSender},
 };
 use std::thread::{self, JoinHandle};
 
 use factstore::{
-    AppendResult, EventQuery, EventRecord, EventStore, EventStoreError, LiveSubscription, NewEvent,
-    QueryResult,
+    AppendResult, EventQuery, EventRecord, EventStore, EventStoreError, EventSubscription,
+    HandleEvents, NewEvent, QueryResult,
 };
 use sqlx::{
     PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -16,11 +16,13 @@ use sqlx::{
 use tokio::runtime::Builder;
 
 use crate::query_sql::push_query_conditions;
-use crate::subscription_registry::SubscriptionRegistry;
+use crate::subscription_registry::{PendingDelivery, SubscriptionRegistry};
 
 pub struct PostgresStore {
     worker_sender: Mutex<Sender<WorkerCommand>>,
     worker_thread: Mutex<Option<JoinHandle<()>>>,
+    delivery_sender: Sender<DeliveryCommand>,
+    delivery_thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 enum WorkerCommand {
@@ -29,11 +31,16 @@ enum WorkerCommand {
         reply: Sender<Result<QueryResult, EventStoreError>>,
     },
     SubscribeAll {
-        reply: Sender<LiveSubscription>,
+        handle: HandleEvents,
+        reply: Sender<u64>,
     },
     SubscribeTo {
         event_query: EventQuery,
-        reply: Sender<LiveSubscription>,
+        handle: HandleEvents,
+        reply: Sender<u64>,
+    },
+    Unsubscribe {
+        subscription_id: u64,
     },
     Append {
         new_events: Vec<NewEvent>,
@@ -48,6 +55,11 @@ enum WorkerCommand {
     Shutdown,
 }
 
+enum DeliveryCommand {
+    Deliver(Vec<PendingDelivery>),
+    Shutdown,
+}
+
 #[derive(Clone, Debug)]
 struct CommittedAppend {
     append_result: AppendResult,
@@ -56,26 +68,51 @@ struct CommittedAppend {
 
 impl PostgresStore {
     pub fn connect(connection_string: &str) -> Result<Self, sqlx::Error> {
+        let subscription_registry = Arc::new(Mutex::new(SubscriptionRegistry::default()));
+        let (delivery_sender, delivery_receiver) = mpsc::channel();
+        let delivery_thread = thread::Builder::new()
+            .name("factstore-postgres-delivery".to_owned())
+            .spawn(move || run_delivery_thread(delivery_receiver))
+            .map_err(sqlx_io_error)?;
+
         let (worker_sender, worker_receiver) = mpsc::channel();
         let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
         let connection_string = connection_string.to_owned();
 
         let worker_thread = thread::Builder::new()
             .name("factstore-postgres-worker".to_owned())
-            .spawn(move || run_worker_thread(connection_string, worker_receiver, ready_sender))
+            .spawn({
+                let subscription_registry = Arc::clone(&subscription_registry);
+                let delivery_sender = delivery_sender.clone();
+                move || {
+                    run_worker_thread(
+                        connection_string,
+                        worker_receiver,
+                        ready_sender,
+                        subscription_registry,
+                        delivery_sender,
+                    )
+                }
+            })
             .map_err(sqlx_io_error)?;
 
         match ready_receiver.recv() {
             Ok(Ok(())) => Ok(Self {
                 worker_sender: Mutex::new(worker_sender),
                 worker_thread: Mutex::new(Some(worker_thread)),
+                delivery_sender,
+                delivery_thread: Mutex::new(Some(delivery_thread)),
             }),
             Ok(Err(error)) => {
                 let _ = worker_thread.join();
+                let _ = delivery_sender.send(DeliveryCommand::Shutdown);
+                let _ = delivery_thread.join();
                 Err(error)
             }
             Err(error) => {
                 let _ = worker_thread.join();
+                let _ = delivery_sender.send(DeliveryCommand::Shutdown);
+                let _ = delivery_thread.join();
                 Err(sqlx_io_error(io::Error::other(format!(
                     "postgres worker startup channel failed: {error}"
                 ))))
@@ -118,30 +155,59 @@ impl PostgresStore {
         })?
     }
 
-    fn run_subscribe_all(&self) -> Result<LiveSubscription, EventStoreError> {
+    fn clone_worker_sender(&self) -> Result<Sender<WorkerCommand>, EventStoreError> {
+        self.worker_sender
+            .lock()
+            .map(|worker_sender| worker_sender.clone())
+            .map_err(|_| Self::worker_failure("postgres worker sender lock poisoned"))
+    }
+
+    fn run_subscribe_all(
+        &self,
+        handle: HandleEvents,
+    ) -> Result<EventSubscription, EventStoreError> {
+        let worker_sender = self.clone_worker_sender()?;
         let (reply_sender, reply_receiver) = mpsc::channel();
         self.send_command(WorkerCommand::SubscribeAll {
+            handle,
             reply: reply_sender,
         })?;
 
-        reply_receiver.recv().map_err(|error| {
+        let subscription_id = reply_receiver.recv().map_err(|error| {
             Self::worker_failure(format!("postgres worker subscribe reply failed: {error}"))
-        })
+        })?;
+
+        Ok(EventSubscription::new(
+            subscription_id,
+            Arc::new(move |subscription_id| {
+                let _ = worker_sender.send(WorkerCommand::Unsubscribe { subscription_id });
+            }),
+        ))
     }
 
     fn run_subscribe_to(
         &self,
         event_query: &EventQuery,
-    ) -> Result<LiveSubscription, EventStoreError> {
+        handle: HandleEvents,
+    ) -> Result<EventSubscription, EventStoreError> {
+        let worker_sender = self.clone_worker_sender()?;
         let (reply_sender, reply_receiver) = mpsc::channel();
         self.send_command(WorkerCommand::SubscribeTo {
             event_query: event_query.clone(),
+            handle,
             reply: reply_sender,
         })?;
 
-        reply_receiver.recv().map_err(|error| {
+        let subscription_id = reply_receiver.recv().map_err(|error| {
             Self::worker_failure(format!("postgres worker subscribe reply failed: {error}"))
-        })
+        })?;
+
+        Ok(EventSubscription::new(
+            subscription_id,
+            Arc::new(move |subscription_id| {
+                let _ = worker_sender.send(WorkerCommand::Unsubscribe { subscription_id });
+            }),
+        ))
     }
 
     fn run_append(&self, new_events: Vec<NewEvent>) -> Result<AppendResult, EventStoreError> {
@@ -176,6 +242,22 @@ impl PostgresStore {
             ))
         })?
     }
+
+    fn enqueue_delivery(
+        delivery_sender: &Sender<DeliveryCommand>,
+        pending_deliveries: Vec<PendingDelivery>,
+    ) {
+        if pending_deliveries.is_empty() {
+            return;
+        }
+
+        if let Err(error) = delivery_sender.send(DeliveryCommand::Deliver(pending_deliveries)) {
+            eprintln!(
+                "factstore-postgres delivery dispatcher stopped after commit: {}",
+                error
+            );
+        }
+    }
 }
 
 impl Drop for PostgresStore {
@@ -187,6 +269,14 @@ impl Drop for PostgresStore {
         if let Ok(mut worker_thread) = self.worker_thread.lock() {
             if let Some(worker_thread) = worker_thread.take() {
                 let _ = worker_thread.join();
+            }
+        }
+
+        let _ = self.delivery_sender.send(DeliveryCommand::Shutdown);
+
+        if let Ok(mut delivery_thread) = self.delivery_thread.lock() {
+            if let Some(delivery_thread) = delivery_thread.take() {
+                let _ = delivery_thread.join();
             }
         }
     }
@@ -218,12 +308,16 @@ impl EventStore for PostgresStore {
         self.run_append_if(new_events, context_query, expected_context_version)
     }
 
-    fn subscribe_all(&self) -> Result<LiveSubscription, EventStoreError> {
-        self.run_subscribe_all()
+    fn subscribe_all(&self, handle: HandleEvents) -> Result<EventSubscription, EventStoreError> {
+        self.run_subscribe_all(handle)
     }
 
-    fn subscribe_to(&self, event_query: &EventQuery) -> Result<LiveSubscription, EventStoreError> {
-        self.run_subscribe_to(event_query)
+    fn subscribe_to(
+        &self,
+        event_query: &EventQuery,
+        handle: HandleEvents,
+    ) -> Result<EventSubscription, EventStoreError> {
+        self.run_subscribe_to(event_query, handle)
     }
 }
 
@@ -231,6 +325,8 @@ fn run_worker_thread(
     connection_string: String,
     worker_receiver: Receiver<WorkerCommand>,
     ready_sender: SyncSender<Result<(), sqlx::Error>>,
+    subscription_registry: Arc<Mutex<SubscriptionRegistry>>,
+    delivery_sender: Sender<DeliveryCommand>,
 ) {
     let runtime = match Builder::new_current_thread().enable_all().build() {
         Ok(runtime) => runtime,
@@ -264,7 +360,6 @@ fn run_worker_thread(
         return;
     }
 
-    let mut subscription_registry = SubscriptionRegistry::default();
     while let Ok(worker_command) = worker_receiver.recv() {
         match worker_command {
             WorkerCommand::Query { event_query, reply } => {
@@ -273,20 +368,47 @@ fn run_worker_thread(
                     .map_err(PostgresStore::backend_failure);
                 let _ = reply.send(result);
             }
-            WorkerCommand::SubscribeAll { reply } => {
-                let _ = reply.send(subscription_registry.subscribe_all());
+            WorkerCommand::SubscribeAll { handle, reply } => {
+                let id = match subscription_registry.lock() {
+                    Ok(mut subscription_registry) => subscription_registry.subscribe_all(handle),
+                    Err(poisoned) => poisoned.into_inner().subscribe_all(handle),
+                };
+                let _ = reply.send(id);
             }
-            WorkerCommand::SubscribeTo { event_query, reply } => {
-                let _ = reply.send(subscription_registry.subscribe_to(Some(event_query)));
+            WorkerCommand::SubscribeTo {
+                event_query,
+                handle,
+                reply,
+            } => {
+                let id = match subscription_registry.lock() {
+                    Ok(mut subscription_registry) => {
+                        subscription_registry.subscribe_to(Some(event_query), handle)
+                    }
+                    Err(poisoned) => poisoned
+                        .into_inner()
+                        .subscribe_to(Some(event_query), handle),
+                };
+                let _ = reply.send(id);
             }
+            WorkerCommand::Unsubscribe { subscription_id } => match subscription_registry.lock() {
+                Ok(mut subscription_registry) => subscription_registry.unsubscribe(subscription_id),
+                Err(poisoned) => poisoned.into_inner().unsubscribe(subscription_id),
+            },
             WorkerCommand::Append { new_events, reply } => {
                 let result = runtime
                     .block_on(append_with_pool(&pool, new_events))
-                    .map_err(PostgresStore::backend_failure)
-                    .map(|committed_append| {
-                        subscription_registry.notify(&committed_append.event_records);
-                        committed_append.append_result
-                    });
+                    .map_err(PostgresStore::backend_failure);
+                if let Ok(committed_append) = &result {
+                    let pending_deliveries = match subscription_registry.lock() {
+                        Ok(subscription_registry) => subscription_registry
+                            .pending_deliveries(&committed_append.event_records),
+                        Err(poisoned) => poisoned
+                            .into_inner()
+                            .pending_deliveries(&committed_append.event_records),
+                    };
+                    PostgresStore::enqueue_delivery(&delivery_sender, pending_deliveries);
+                }
+                let result = result.map(|committed_append| committed_append.append_result);
                 let _ = reply.send(result);
             }
             WorkerCommand::AppendIf {
@@ -303,14 +425,34 @@ fn run_worker_thread(
                         expected_context_version,
                     ))
                     .map_err(PostgresStore::backend_failure)
-                    .and_then(|result| result)
-                    .map(|committed_append| {
-                        subscription_registry.notify(&committed_append.event_records);
-                        committed_append.append_result
-                    });
+                    .and_then(|result| result);
+                if let Ok(committed_append) = &result {
+                    let pending_deliveries = match subscription_registry.lock() {
+                        Ok(subscription_registry) => subscription_registry
+                            .pending_deliveries(&committed_append.event_records),
+                        Err(poisoned) => poisoned
+                            .into_inner()
+                            .pending_deliveries(&committed_append.event_records),
+                    };
+                    PostgresStore::enqueue_delivery(&delivery_sender, pending_deliveries);
+                }
+                let result = result.map(|committed_append| committed_append.append_result);
                 let _ = reply.send(result);
             }
             WorkerCommand::Shutdown => break,
+        }
+    }
+}
+
+fn run_delivery_thread(delivery_receiver: Receiver<DeliveryCommand>) {
+    while let Ok(delivery_command) = delivery_receiver.recv() {
+        match delivery_command {
+            DeliveryCommand::Deliver(pending_deliveries) => {
+                for pending_delivery in pending_deliveries {
+                    pending_delivery.deliver();
+                }
+            }
+            DeliveryCommand::Shutdown => break,
         }
     }
 }

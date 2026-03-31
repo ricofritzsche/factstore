@@ -40,9 +40,9 @@ What it proves:
 
 - create a feature-local query model
 - subscribe before append
-- subscribe with `subscribe_to(&EventQuery)`
+- subscribe with `subscribe_to(&EventQuery, handle)`
 - append one committed batch where only some events match
-- receive the next matching committed batch through `next_batch()`
+- let the handler receive the next matching committed batch
 - update the feature-local query model from that delivered batch
 
 This is the current projection-style usage: the feature slice subscribes to relevant future facts and does not receive unrelated facts for that subscription.

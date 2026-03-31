@@ -1,6 +1,7 @@
-use factstore::{EventFilter, EventQuery, EventStore, NewEvent};
+use factstore::{EventFilter, EventQuery, EventStore, NewEvent, SubscriptionHandlerError};
 use factstore_memory::MemoryStore;
 use serde_json::json;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Default)]
 struct AccountNamesView {
@@ -31,12 +32,29 @@ impl AccountNamesView {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let store = MemoryStore::new();
-    let mut account_names_view = AccountNamesView::default();
+    let account_names_view = Arc::new(Mutex::new(AccountNamesView::default()));
+    let projection_view = Arc::clone(&account_names_view);
     let subscription = store.subscribe_to(
         &EventQuery::all().with_filters([EventFilter::for_event_types([
             "account-opened",
             "account-renamed",
         ])]),
+        Arc::new(move |committed_batch| {
+            println!(
+                "projection handler received filtered committed batch with {} events",
+                committed_batch.len()
+            );
+            for event_record in &committed_batch {
+                println!("  {event_record:#?}");
+            }
+
+            projection_view
+                .lock()
+                .expect("example projection lock should succeed")
+                .apply_committed_batch(&committed_batch);
+
+            Ok::<(), SubscriptionHandlerError>(())
+        }),
     )?;
 
     store.append(vec![
@@ -63,18 +81,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ])?;
 
-    let committed_batch = subscription.next_batch()?;
-
     println!(
-        "received filtered committed batch with {} events",
-        committed_batch.len()
+        "updated query model: {:#?}",
+        account_names_view
+            .lock()
+            .expect("example projection lock should succeed")
     );
-    for event_record in &committed_batch {
-        println!("  {event_record:#?}");
-    }
-
-    account_names_view.apply_committed_batch(&committed_batch);
-    println!("updated query model: {account_names_view:#?}");
+    subscription.unsubscribe();
 
     Ok(())
 }

@@ -2,8 +2,8 @@ use factstore_conformance as store_conformance;
 use factstore_memory::MemoryStore;
 
 #[test]
-fn subscribe_receives_a_future_committed_append_batch() {
-    store_conformance::subscribe_receives_a_future_committed_append_batch(MemoryStore::new);
+fn subscribe_all_callback_receives_a_future_committed_batch() {
+    store_conformance::subscribe_all_callback_receives_a_future_committed_batch(MemoryStore::new);
 }
 
 #[test]
@@ -22,13 +22,15 @@ fn subscription_batches_arrive_in_commit_order() {
 }
 
 #[test]
-fn append_if_conflict_emits_no_subscription_batch() {
-    store_conformance::append_if_conflict_emits_no_subscription_batch(MemoryStore::new);
+fn append_if_conflict_emits_no_delivery() {
+    store_conformance::append_if_conflict_emits_no_delivery(MemoryStore::new);
 }
 
 #[test]
-fn dropping_one_subscription_does_not_break_append_for_others() {
-    store_conformance::dropping_one_subscription_does_not_break_append_for_others(MemoryStore::new);
+fn unsubscribing_one_subscriber_does_not_break_delivery_for_others() {
+    store_conformance::unsubscribing_one_subscriber_does_not_break_delivery_for_others(
+        MemoryStore::new,
+    );
 }
 
 #[test]
@@ -72,8 +74,8 @@ fn filtered_subscription_preserves_event_order_inside_delivered_batch() {
 }
 
 #[test]
-fn append_if_conflict_emits_no_filtered_subscription_batch() {
-    store_conformance::append_if_conflict_emits_no_filtered_subscription_batch(MemoryStore::new);
+fn append_if_conflict_emits_no_filtered_delivery() {
+    store_conformance::append_if_conflict_emits_no_filtered_delivery(MemoryStore::new);
 }
 
 #[test]
@@ -81,4 +83,9 @@ fn differently_filtered_subscribers_observe_the_same_commit_differently() {
     store_conformance::differently_filtered_subscribers_observe_the_same_commit_differently(
         MemoryStore::new,
     );
+}
+
+#[test]
+fn handler_failure_does_not_roll_back_append_success() {
+    store_conformance::handler_failure_does_not_roll_back_append_success(MemoryStore::new);
 }

@@ -3,8 +3,10 @@ mod support;
 use factstore_conformance as store_conformance;
 
 #[test]
-fn subscribe_receives_a_future_committed_append_batch() {
-    support::run_store_test(store_conformance::subscribe_receives_a_future_committed_append_batch);
+fn subscribe_all_callback_receives_a_future_committed_batch() {
+    support::run_store_test(
+        store_conformance::subscribe_all_callback_receives_a_future_committed_batch,
+    );
 }
 
 #[test]
@@ -23,14 +25,14 @@ fn subscription_batches_arrive_in_commit_order() {
 }
 
 #[test]
-fn append_if_conflict_emits_no_subscription_batch() {
-    support::run_store_test(store_conformance::append_if_conflict_emits_no_subscription_batch);
+fn append_if_conflict_emits_no_delivery() {
+    support::run_store_test(store_conformance::append_if_conflict_emits_no_delivery);
 }
 
 #[test]
-fn dropping_one_subscription_does_not_break_append_for_others() {
+fn unsubscribing_one_subscriber_does_not_break_delivery_for_others() {
     support::run_store_test(
-        store_conformance::dropping_one_subscription_does_not_break_append_for_others,
+        store_conformance::unsubscribing_one_subscriber_does_not_break_delivery_for_others,
     );
 }
 
@@ -77,10 +79,8 @@ fn filtered_subscription_preserves_event_order_inside_delivered_batch() {
 }
 
 #[test]
-fn append_if_conflict_emits_no_filtered_subscription_batch() {
-    support::run_store_test(
-        store_conformance::append_if_conflict_emits_no_filtered_subscription_batch,
-    );
+fn append_if_conflict_emits_no_filtered_delivery() {
+    support::run_store_test(store_conformance::append_if_conflict_emits_no_filtered_delivery);
 }
 
 #[test]
@@ -88,4 +88,9 @@ fn differently_filtered_subscribers_observe_the_same_commit_differently() {
     support::run_store_test(
         store_conformance::differently_filtered_subscribers_observe_the_same_commit_differently,
     );
+}
+
+#[test]
+fn handler_failure_does_not_roll_back_append_success() {
+    support::run_store_test(store_conformance::handler_failure_does_not_roll_back_append_success);
 }
