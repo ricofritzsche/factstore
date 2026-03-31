@@ -66,6 +66,9 @@ The current public contract types are:
 - `EventQuery`
 - `QueryResult`
 - `AppendResult`
+- `LiveSubscription`
+- `LiveSubscriptionRecvError`
+- `TryLiveSubscriptionRecvError`
 - `EventStore`
 - `EventStoreError`
 
@@ -376,7 +379,7 @@ Implemented now:
 
 Not implemented now:
 
-- subscriptions
+- durable subscriber cursors and replay
 - embedded persistent store
 - file store
 - transport adapters
