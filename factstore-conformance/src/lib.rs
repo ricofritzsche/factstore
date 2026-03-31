@@ -1,4 +1,6 @@
-use factstore::{EventFilter, EventQuery, EventStore, EventStoreError, NewEvent};
+use factstore::{
+    EventFilter, EventQuery, EventStore, EventStoreError, NewEvent, TryLiveSubscriptionRecvError,
+};
 use serde_json::{Value, json};
 
 fn new_event(event_type: &str, payload: Value) -> NewEvent {
@@ -47,6 +49,199 @@ where
         .expect_err("empty append should fail");
 
     assert_eq!(error, EventStoreError::EmptyAppend);
+}
+
+pub fn subscribe_receives_a_future_committed_append_batch<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+    let subscription = store.subscribe().expect("subscribe should succeed");
+
+    store
+        .append(vec![
+            new_event("account-opened", json!({ "accountId": "a1" })),
+            new_event("account-credited", json!({ "accountId": "a1" })),
+        ])
+        .expect("append should succeed");
+
+    let committed_batch = subscription
+        .recv()
+        .expect("subscription should receive a batch");
+    assert_eq!(committed_batch.len(), 2);
+    assert_eq!(committed_batch[0].sequence_number, 1);
+    assert_eq!(committed_batch[1].sequence_number, 2);
+}
+
+pub fn subscribe_does_not_replay_historical_events<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+
+    store
+        .append(vec![new_event(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("append should succeed");
+
+    let subscription = store.subscribe().expect("subscribe should succeed");
+
+    assert_eq!(
+        subscription.try_recv(),
+        Err(TryLiveSubscriptionRecvError::Empty)
+    );
+}
+
+pub fn two_subscribers_receive_the_same_committed_batches<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+    let first_subscription = store.subscribe().expect("first subscribe should succeed");
+    let second_subscription = store.subscribe().expect("second subscribe should succeed");
+
+    store
+        .append(vec![new_event(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("append should succeed");
+
+    let first_batch = first_subscription
+        .recv()
+        .expect("first subscription should receive a batch");
+    let second_batch = second_subscription
+        .recv()
+        .expect("second subscription should receive a batch");
+
+    assert_eq!(first_batch, second_batch);
+    assert_eq!(first_batch.len(), 1);
+    assert_eq!(first_batch[0].sequence_number, 1);
+}
+
+pub fn subscription_batches_arrive_in_commit_order<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+    let subscription = store.subscribe().expect("subscribe should succeed");
+
+    store
+        .append(vec![new_event(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("first append should succeed");
+    store
+        .append(vec![new_event(
+            "account-credited",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("second append should succeed");
+
+    let first_batch = subscription.recv().expect("first batch should arrive");
+    let second_batch = subscription.recv().expect("second batch should arrive");
+
+    assert_eq!(first_batch[0].sequence_number, 1);
+    assert_eq!(second_batch[0].sequence_number, 2);
+}
+
+pub fn append_if_conflict_emits_no_subscription_batch<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+
+    store
+        .append(vec![new_event(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("append should succeed");
+
+    let subscription = store.subscribe().expect("subscribe should succeed");
+    let context_query = EventQuery::all().with_filters([
+        EventFilter::default().with_payload_predicates([json!({ "accountId": "a1" })])
+    ]);
+
+    let error = store
+        .append_if(
+            vec![new_event("account-credited", json!({ "accountId": "a1" }))],
+            &context_query,
+            None,
+        )
+        .expect_err("conditional append should fail");
+
+    assert_eq!(
+        error,
+        EventStoreError::ConditionalAppendConflict {
+            expected: None,
+            actual: Some(1),
+        }
+    );
+    assert_eq!(
+        subscription.try_recv(),
+        Err(TryLiveSubscriptionRecvError::Empty)
+    );
+}
+
+pub fn dropping_one_subscription_does_not_break_append_for_others<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+    let dropped_subscription = store.subscribe().expect("subscribe should succeed");
+    let active_subscription = store.subscribe().expect("subscribe should succeed");
+
+    drop(dropped_subscription);
+
+    let append_result = store
+        .append(vec![new_event(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("append should still succeed");
+
+    assert_eq!(append_result.first_sequence_number, 1);
+    assert_eq!(append_result.last_sequence_number, 1);
+
+    let committed_batch = active_subscription
+        .recv()
+        .expect("active subscription should still receive a batch");
+    assert_eq!(committed_batch.len(), 1);
+    assert_eq!(committed_batch[0].sequence_number, 1);
+}
+
+pub fn subscription_delivery_preserves_the_committed_batch_shape<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+    let subscription = store.subscribe().expect("subscribe should succeed");
+
+    store
+        .append(vec![
+            new_event("account-opened", json!({ "accountId": "a1" })),
+            new_event("account-credited", json!({ "accountId": "a1" })),
+        ])
+        .expect("append should succeed");
+
+    let committed_batch = subscription
+        .recv()
+        .expect("subscription should receive a batch");
+
+    assert_eq!(committed_batch.len(), 2);
+    assert_eq!(committed_batch[0].sequence_number, 1);
+    assert_eq!(committed_batch[1].sequence_number, 2);
 }
 
 pub fn query_returns_events_in_ascending_order<S, F>(create_store: F)

@@ -1,4 +1,4 @@
-use crate::{AppendResult, EventQuery, NewEvent, QueryResult};
+use crate::{AppendResult, EventQuery, LiveSubscription, NewEvent, QueryResult};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
@@ -39,6 +39,10 @@ impl Error for EventStoreError {}
 /// - failed appends and failed conditional appends must not partially commit a batch
 /// - under the current Rust contract, failed appends also must not consume
 ///   sequence numbers that later successful commits would observe
+/// - live subscriptions observe only batches committed after subscription becomes active
+/// - each successful committed append is delivered as one committed batch in commit order
+/// - failed conditional appends deliver nothing
+/// - slow or disconnected subscribers must not weaken append correctness
 pub trait EventStore {
     fn query(&self, event_query: &EventQuery) -> Result<QueryResult, EventStoreError>;
 
@@ -50,4 +54,6 @@ pub trait EventStore {
         context_query: &EventQuery,
         expected_context_version: Option<u64>,
     ) -> Result<AppendResult, EventStoreError>;
+
+    fn subscribe(&self) -> Result<LiveSubscription, EventStoreError>;
 }

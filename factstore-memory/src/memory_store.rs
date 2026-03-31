@@ -1,15 +1,24 @@
 use std::cell::{Cell, RefCell};
 
 use factstore::{
-    AppendResult, EventQuery, EventRecord, EventStore, EventStoreError, NewEvent, QueryResult,
+    AppendResult, EventQuery, EventRecord, EventStore, EventStoreError, LiveSubscription, NewEvent,
+    QueryResult,
 };
 
 use crate::query_match::matches_query;
+use crate::subscription_registry::SubscriptionRegistry;
+
+#[derive(Clone, Debug)]
+struct CommittedAppend {
+    append_result: AppendResult,
+    event_records: Vec<EventRecord>,
+}
 
 #[derive(Debug, Default)]
 pub struct MemoryStore {
     event_records: RefCell<Vec<EventRecord>>,
     next_sequence_number: Cell<u64>,
+    subscription_registry: RefCell<SubscriptionRegistry>,
 }
 
 impl MemoryStore {
@@ -17,6 +26,7 @@ impl MemoryStore {
         Self {
             event_records: RefCell::new(Vec::new()),
             next_sequence_number: Cell::new(1),
+            subscription_registry: RefCell::new(SubscriptionRegistry::default()),
         }
     }
 
@@ -29,7 +39,10 @@ impl MemoryStore {
             .last()
     }
 
-    fn append_records(&self, new_events: Vec<NewEvent>) -> Result<AppendResult, EventStoreError> {
+    fn append_records(
+        &self,
+        new_events: Vec<NewEvent>,
+    ) -> Result<CommittedAppend, EventStoreError> {
         if new_events.is_empty() {
             return Err(EventStoreError::EmptyAppend);
         }
@@ -37,26 +50,29 @@ impl MemoryStore {
         let committed_count = new_events.len() as u64;
         let first_sequence_number = self.next_sequence_number.get();
         let last_sequence_number = first_sequence_number + committed_count - 1;
+        let committed_event_records = new_events
+            .into_iter()
+            .enumerate()
+            .map(|(offset, new_event)| EventRecord {
+                sequence_number: first_sequence_number + offset as u64,
+                event_type: new_event.event_type,
+                payload: new_event.payload,
+            })
+            .collect::<Vec<_>>();
 
         self.event_records
             .borrow_mut()
-            .extend(
-                new_events
-                    .into_iter()
-                    .enumerate()
-                    .map(|(offset, new_event)| EventRecord {
-                        sequence_number: first_sequence_number + offset as u64,
-                        event_type: new_event.event_type,
-                        payload: new_event.payload,
-                    }),
-            );
+            .extend(committed_event_records.iter().cloned());
 
         self.next_sequence_number.set(last_sequence_number + 1);
 
-        Ok(AppendResult {
-            first_sequence_number,
-            last_sequence_number,
-            committed_count,
+        Ok(CommittedAppend {
+            append_result: AppendResult {
+                first_sequence_number,
+                last_sequence_number,
+                committed_count,
+            },
+            event_records: committed_event_records,
         })
     }
 }
@@ -91,7 +107,11 @@ impl EventStore for MemoryStore {
     }
 
     fn append(&self, new_events: Vec<NewEvent>) -> Result<AppendResult, EventStoreError> {
-        self.append_records(new_events)
+        let committed_append = self.append_records(new_events)?;
+        self.subscription_registry
+            .borrow_mut()
+            .notify(&committed_append.event_records);
+        Ok(committed_append.append_result)
     }
 
     fn append_if(
@@ -109,6 +129,14 @@ impl EventStore for MemoryStore {
             });
         }
 
-        self.append_records(new_events)
+        let committed_append = self.append_records(new_events)?;
+        self.subscription_registry
+            .borrow_mut()
+            .notify(&committed_append.event_records);
+        Ok(committed_append.append_result)
+    }
+
+    fn subscribe(&self) -> Result<LiveSubscription, EventStoreError> {
+        Ok(self.subscription_registry.borrow_mut().subscribe())
     }
 }

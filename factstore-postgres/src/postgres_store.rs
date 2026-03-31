@@ -6,7 +6,8 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 
 use factstore::{
-    AppendResult, EventQuery, EventRecord, EventStore, EventStoreError, NewEvent, QueryResult,
+    AppendResult, EventQuery, EventRecord, EventStore, EventStoreError, LiveSubscription, NewEvent,
+    QueryResult,
 };
 use sqlx::{
     PgPool, Postgres, QueryBuilder, Row, Transaction,
@@ -15,6 +16,7 @@ use sqlx::{
 use tokio::runtime::Builder;
 
 use crate::query_sql::push_query_conditions;
+use crate::subscription_registry::SubscriptionRegistry;
 
 pub struct PostgresStore {
     worker_sender: Mutex<Sender<WorkerCommand>>,
@@ -25,6 +27,9 @@ enum WorkerCommand {
     Query {
         event_query: EventQuery,
         reply: Sender<Result<QueryResult, EventStoreError>>,
+    },
+    Subscribe {
+        reply: Sender<LiveSubscription>,
     },
     Append {
         new_events: Vec<NewEvent>,
@@ -37,6 +42,12 @@ enum WorkerCommand {
         reply: Sender<Result<AppendResult, EventStoreError>>,
     },
     Shutdown,
+}
+
+#[derive(Clone, Debug)]
+struct CommittedAppend {
+    append_result: AppendResult,
+    event_records: Vec<EventRecord>,
 }
 
 impl PostgresStore {
@@ -101,6 +112,17 @@ impl PostgresStore {
         reply_receiver.recv().map_err(|error| {
             Self::worker_failure(format!("postgres worker query reply failed: {error}"))
         })?
+    }
+
+    fn run_subscribe(&self) -> Result<LiveSubscription, EventStoreError> {
+        let (reply_sender, reply_receiver) = mpsc::channel();
+        self.send_command(WorkerCommand::Subscribe {
+            reply: reply_sender,
+        })?;
+
+        reply_receiver.recv().map_err(|error| {
+            Self::worker_failure(format!("postgres worker subscribe reply failed: {error}"))
+        })
     }
 
     fn run_append(&self, new_events: Vec<NewEvent>) -> Result<AppendResult, EventStoreError> {
@@ -176,6 +198,10 @@ impl EventStore for PostgresStore {
 
         self.run_append_if(new_events, context_query, expected_context_version)
     }
+
+    fn subscribe(&self) -> Result<LiveSubscription, EventStoreError> {
+        self.run_subscribe()
+    }
 }
 
 fn run_worker_thread(
@@ -215,6 +241,7 @@ fn run_worker_thread(
         return;
     }
 
+    let mut subscription_registry = SubscriptionRegistry::default();
     while let Ok(worker_command) = worker_receiver.recv() {
         match worker_command {
             WorkerCommand::Query { event_query, reply } => {
@@ -223,10 +250,17 @@ fn run_worker_thread(
                     .map_err(PostgresStore::backend_failure);
                 let _ = reply.send(result);
             }
+            WorkerCommand::Subscribe { reply } => {
+                let _ = reply.send(subscription_registry.subscribe());
+            }
             WorkerCommand::Append { new_events, reply } => {
                 let result = runtime
                     .block_on(append_with_pool(&pool, new_events))
-                    .map_err(PostgresStore::backend_failure);
+                    .map_err(PostgresStore::backend_failure)
+                    .map(|committed_append| {
+                        subscription_registry.notify(&committed_append.event_records);
+                        committed_append.append_result
+                    });
                 let _ = reply.send(result);
             }
             WorkerCommand::AppendIf {
@@ -243,7 +277,11 @@ fn run_worker_thread(
                         expected_context_version,
                     ))
                     .map_err(PostgresStore::backend_failure)
-                    .and_then(|result| result);
+                    .and_then(|result| result)
+                    .map(|committed_append| {
+                        subscription_registry.notify(&committed_append.event_records);
+                        committed_append.append_result
+                    });
                 let _ = reply.send(result);
             }
             WorkerCommand::Shutdown => break,
@@ -288,12 +326,12 @@ async fn query_with_pool(
 async fn append_with_pool(
     pool: &PgPool,
     new_events: Vec<NewEvent>,
-) -> Result<AppendResult, sqlx::Error> {
+) -> Result<CommittedAppend, sqlx::Error> {
     let mut transaction = pool.begin().await?;
     lock_events_table(&mut transaction).await?;
-    let append_result = append_records(&mut transaction, new_events).await?;
+    let committed_append = append_records(&mut transaction, new_events).await?;
     transaction.commit().await?;
-    Ok(append_result)
+    Ok(committed_append)
 }
 
 async fn append_if_with_pool(
@@ -301,7 +339,7 @@ async fn append_if_with_pool(
     new_events: Vec<NewEvent>,
     context_query: &EventQuery,
     expected_context_version: Option<u64>,
-) -> Result<Result<AppendResult, EventStoreError>, sqlx::Error> {
+) -> Result<Result<CommittedAppend, EventStoreError>, sqlx::Error> {
     let mut transaction = pool.begin().await?;
     lock_events_table(&mut transaction).await?;
 
@@ -316,10 +354,10 @@ async fn append_if_with_pool(
         }));
     }
 
-    let append_result = append_records(&mut transaction, new_events).await?;
+    let committed_append = append_records(&mut transaction, new_events).await?;
     transaction.commit().await?;
 
-    Ok(Ok(append_result))
+    Ok(Ok(committed_append))
 }
 
 async fn initialize_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
@@ -363,31 +401,42 @@ async fn lock_events_table(transaction: &mut Transaction<'_, Postgres>) -> Resul
 async fn append_records(
     transaction: &mut Transaction<'_, Postgres>,
     new_events: Vec<NewEvent>,
-) -> Result<AppendResult, sqlx::Error> {
+) -> Result<CommittedAppend, sqlx::Error> {
     let committed_count = new_events.len() as u64;
     let first_sequence_number =
         sqlx::query_scalar::<_, i64>("SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM events")
             .fetch_one(transaction.as_mut())
             .await? as u64;
     let last_sequence_number = first_sequence_number + committed_count - 1;
+    let committed_event_records = new_events
+        .into_iter()
+        .enumerate()
+        .map(|(offset, new_event)| EventRecord {
+            sequence_number: first_sequence_number + offset as u64,
+            event_type: new_event.event_type,
+            payload: new_event.payload,
+        })
+        .collect::<Vec<_>>();
 
-    for (offset, new_event) in new_events.into_iter().enumerate() {
-        let sequence_number = first_sequence_number + offset as u64;
+    for event_record in &committed_event_records {
         sqlx::query(
             "INSERT INTO events (sequence_number, event_type, payload)
              VALUES ($1, $2, $3)",
         )
-        .bind(sequence_number as i64)
-        .bind(new_event.event_type)
-        .bind(new_event.payload)
+        .bind(event_record.sequence_number as i64)
+        .bind(&event_record.event_type)
+        .bind(&event_record.payload)
         .execute(transaction.as_mut())
         .await?;
     }
 
-    Ok(AppendResult {
-        first_sequence_number,
-        last_sequence_number,
-        committed_count,
+    Ok(CommittedAppend {
+        append_result: AppendResult {
+            first_sequence_number,
+            last_sequence_number,
+            committed_count,
+        },
+        event_records: committed_event_records,
     })
 }
 

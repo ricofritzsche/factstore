@@ -12,7 +12,6 @@ This repository currently contains:
 It does not currently contain:
 
 - an embedded persistent store
-- subscriptions
 - HTTP or gRPC adapters
 
 ## Workspace
@@ -52,6 +51,7 @@ The current shared contract supports:
 - append of one or more events
 - query
 - conditional append with typed conflict failure
+- live subscriptions for future committed batches
 - event-type filtering
 - payload-predicate filtering
 - explicit separation of:
@@ -101,6 +101,16 @@ These are the load-bearing behaviors implemented today.
 - stale context returns `EventStoreError::ConditionalAppendConflict`
 - failed conditional append does not partially append a batch
 - under the current Rust contract, failed appends also do not consume sequence numbers that later successful appends would observe
+
+### Live Subscriptions
+
+- subscriptions are live only and do not replay history
+- notifications happen only after a successful commit
+- each committed append batch is delivered as one batch
+- delivery order follows committed global sequence order
+- failed conditional append delivers nothing
+- multiple subscribers can observe the same committed batches
+- dropping one subscription does not break append for others
 
 ## Query Model
 
@@ -362,6 +372,7 @@ Implemented now:
 - memory store
 - postgres store
 - reusable store conformance tests
+- live subscriptions
 
 Not implemented now:
 
