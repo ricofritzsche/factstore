@@ -39,7 +39,7 @@ cargo run --manifest-path examples/account-projection/Cargo.toml
 What it proves:
 
 - define a feature-local read model
-- subscribe with `subscribe_to(&EventQuery, handle)` for only the relevant facts
+- register `stream_to(&EventQuery, handle)` for only the relevant facts
 - append one committed batch where some facts match and others do not
 - update the read model from the one delivered committed batch
 - keep unrelated facts out of that projection by contract

@@ -20,7 +20,7 @@ cd factstore
 cargo check
 ```
 
-This verifies the shared contract crate, the memory store, the PostgreSQL store, and the conformance test crate all compile together.
+This verifies the shared contract crate, the memory store, the SQLite store, the PostgreSQL store, and the conformance test crate all compile together.
 
 ## Start With The Memory Store
 
@@ -35,7 +35,7 @@ This is the simplest way to see the current semantic contract in action:
 - append
 - query
 - conditional append
-- projection updates through live subscriptions
+- projection updates through streams
 
 If you want the first direct code path after that, run the basic memory example:
 
@@ -51,7 +51,7 @@ For the common feature-slice path, run the account projection example next:
 cargo run --manifest-path examples/account-projection/Cargo.toml
 ```
 
-That example shows a feature slice owning a read model, subscribing only to the facts relevant to that model, and updating it from committed batches.
+That example shows a feature slice owning a read model, streaming only the facts relevant to that model, and updating it from committed batches.
 
 ## Run The PostgreSQL Store Tests
 
@@ -68,9 +68,9 @@ The PostgreSQL tests create a fresh schema per test run and exercise the same co
 After these commands, you should know:
 
 - the repository already has a shared runtime contract
-- memory and PostgreSQL preserve the same observable append/query/conditional-append behavior
-- projection-style updates are implemented as part of the current contract
-- a feature slice can subscribe to relevant future facts with `subscribe_to(&EventQuery, handle)`
-- live subscriptions are the mechanism behind those projection updates
+- memory, SQLite, and PostgreSQL preserve the same observable append/query/conditional-append behavior
+- projection-style updates are implemented as part of the current contract through streams
+- a feature slice can stream relevant future facts with `stream_to(&EventQuery, handle)`
+- SQLite already implements durable replay/catch-up through `stream_*_durable(...)`
 - the current scope is still intentionally narrow and focused on core behavior
 - there are two direct runnable memory-store examples you can build on next

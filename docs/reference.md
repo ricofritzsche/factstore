@@ -53,24 +53,31 @@ Result of one committed append batch.
 
 This makes the committed sequence range explicit without overloading it with context-version meaning.
 
-## `HandleEvents`
+## `HandleStream`
 
-Callback type for projection updates and other live subscriptions.
+Callback type for streams and durable streams.
 
 - receives one delivered committed batch as `Vec<EventRecord>`
-- returns `Result<(), SubscriptionHandlerError>`
-- is used by both `subscribe_all(...)` and `subscribe_to(...)`
+- returns `Result<(), StreamHandlerError>`
+- is used by `stream_all(...)`, `stream_to(...)`, `stream_all_durable(...)`, and `stream_to_durable(...)`
 
-## `SubscriptionHandlerError`
+## `StreamHandlerError`
 
-Error returned by a subscription handler.
+Error returned by a stream handler.
 
 - represents handler-local failure
 - does not roll back a successful append
 
-## `EventSubscription`
+## `DurableStream`
 
-Active live subscription registration.
+Stable durable stream identity.
+
+- names one persisted replay/catch-up cursor
+- is used by `stream_all_durable(...)` and `stream_to_durable(...)`
+
+## `EventStream`
+
+Active stream registration.
 
 - has a stable id
 - `unsubscribe()` stops future delivery for that subscriber
@@ -83,14 +90,18 @@ Shared runtime contract across store implementations.
 - `query`
 - `append`
 - `append_if`
-- `subscribe_all`
-- `subscribe_to`
+- `stream_all`
+- `stream_to`
+- `stream_all_durable`
+- `stream_to_durable`
 
-Memory and PostgreSQL must preserve the same observable contract behavior.
+All stores must preserve the same observable append/query/conditional-append behavior.
 
-- `subscribe_all(handle)` delivers all future committed batches to the handler
-- `subscribe_to(&EventQuery, handle)` delivers only future committed facts that match that query, preserving original committed order inside each delivered batch
-- the common use is a feature-local read model that updates from those committed batches
+- `stream_all(handle)` delivers all future committed batches to the handler
+- `stream_to(&EventQuery, handle)` delivers only future committed facts that match that query, preserving original committed order inside each delivered batch
+- `stream_all_durable(&DurableStream, handle)` resumes from the stored durable cursor, replays committed batches after it, and then continues with future committed batches
+- `stream_to_durable(&DurableStream, &EventQuery, handle)` does the same with query-defined filtering
+- the common use is still a feature-local read model that updates from committed batches
 
 ## `EventStoreError`
 
@@ -98,6 +109,7 @@ Current shared store error type.
 
 - `EmptyAppend`
 - `ConditionalAppendConflict`
+- `NotImplemented`
 - `BackendFailure`
 
 This stays intentionally small and focused on current shared behavior.

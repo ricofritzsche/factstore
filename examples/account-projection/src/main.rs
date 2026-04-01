@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use factstore::{
-    EventFilter, EventQuery, EventRecord, EventStore, NewEvent, SubscriptionHandlerError,
+    EventFilter, EventQuery, EventRecord, EventStore, NewEvent, StreamHandlerError,
 };
 use factstore_memory::MemoryStore;
 use serde_json::json;
@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let projection = Arc::new(Mutex::new(AccountDirectoryProjection::default()));
     let (batch_applied_sender, batch_applied_receiver) = mpsc::channel();
 
-    let projection_subscription = store.subscribe_to(
+    let projection_stream = store.stream_to(
         &EventQuery::all().with_filters([EventFilter::for_event_types([
             "account-opened",
             "account-renamed",
@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .send(committed_batch.len())
                     .expect("example batch signal should succeed");
 
-                Ok::<(), SubscriptionHandlerError>(())
+                Ok::<(), StreamHandlerError>(())
             }
         }),
     )?;
@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("account directory projection: {projection_state:#?}");
     drop(projection_state);
 
-    projection_subscription.unsubscribe();
+    projection_stream.unsubscribe();
 
     Ok(())
 }

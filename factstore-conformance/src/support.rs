@@ -1,4 +1,4 @@
-use factstore::{EventRecord, HandleEvents, NewEvent, SubscriptionHandlerError};
+use factstore::{EventRecord, HandleStream, NewEvent, StreamHandlerError};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -8,7 +8,7 @@ pub(crate) fn new_event(event_type: &str, payload: Value) -> NewEvent {
     NewEvent::new(event_type, payload)
 }
 
-pub(crate) fn recording_handle(delivery_log: Arc<Mutex<Vec<Vec<EventRecord>>>>) -> HandleEvents {
+pub(crate) fn recording_handle(delivery_log: Arc<Mutex<Vec<Vec<EventRecord>>>>) -> HandleStream {
     Arc::new(move |event_records| {
         delivery_log
             .lock()
@@ -18,12 +18,8 @@ pub(crate) fn recording_handle(delivery_log: Arc<Mutex<Vec<Vec<EventRecord>>>>) 
     })
 }
 
-pub(crate) fn failing_handle() -> HandleEvents {
-    Arc::new(|_| {
-        Err(SubscriptionHandlerError::new(
-            "expected test handler failure",
-        ))
-    })
+pub(crate) fn failing_handle() -> HandleStream {
+    Arc::new(|_| Err(StreamHandlerError::new("expected test handler failure")))
 }
 
 pub(crate) fn delivered_batches(

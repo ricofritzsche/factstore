@@ -1,4 +1,6 @@
-use crate::{AppendResult, EventQuery, EventSubscription, HandleEvents, NewEvent, QueryResult};
+use crate::{
+    AppendResult, DurableStream, EventQuery, EventStream, HandleStream, NewEvent, QueryResult,
+};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
@@ -8,6 +10,10 @@ pub enum EventStoreError {
     ConditionalAppendConflict {
         expected: Option<u64>,
         actual: Option<u64>,
+    },
+    NotImplemented {
+        store: &'static str,
+        operation: &'static str,
     },
     BackendFailure {
         message: String,
@@ -24,6 +30,9 @@ impl Display for EventStoreError {
                     "context version mismatch: expected {expected:?}, actual {actual:?}"
                 )
             }
+            Self::NotImplemented { store, operation } => {
+                write!(formatter, "{store} does not implement {operation} yet")
+            }
             Self::BackendFailure { message } => write!(formatter, "backend failure: {message}"),
         }
     }
@@ -39,12 +48,17 @@ impl Error for EventStoreError {}
 /// - failed appends and failed conditional appends must not partially commit a batch
 /// - under the current Rust contract, failed appends also must not consume
 ///   sequence numbers that later successful commits would observe
-/// - live subscriptions observe only batches committed after subscription becomes active
-/// - `subscribe_all` delivers each successful committed append to the handler as
+/// - streams observe only batches committed after stream registration becomes active
+/// - `stream_all` delivers each successful committed append to the handler as
 ///   one committed batch in commit order
-/// - `subscribe_to` uses `EventQuery` matching semantics to deliver only the
+/// - `stream_to` uses `EventQuery` matching semantics to deliver only the
 ///   matching facts from each future committed batch, preserving their original
 ///   committed order inside one filtered delivered batch
+/// - durable streams persist their last processed sequence number
+/// - durable replay starts strictly after the stored durable cursor
+/// - durable replay transitions into future committed stream delivery without
+///   duplicates or gaps
+/// - durable cursors must not advance past undelivered committed facts
 /// - failed conditional appends deliver nothing
 /// - handler failure must not weaken append correctness
 pub trait EventStore {
@@ -59,11 +73,24 @@ pub trait EventStore {
         expected_context_version: Option<u64>,
     ) -> Result<AppendResult, EventStoreError>;
 
-    fn subscribe_all(&self, handle: HandleEvents) -> Result<EventSubscription, EventStoreError>;
+    fn stream_all(&self, handle: HandleStream) -> Result<EventStream, EventStoreError>;
 
-    fn subscribe_to(
+    fn stream_to(
         &self,
         event_query: &EventQuery,
-        handle: HandleEvents,
-    ) -> Result<EventSubscription, EventStoreError>;
+        handle: HandleStream,
+    ) -> Result<EventStream, EventStoreError>;
+
+    fn stream_all_durable(
+        &self,
+        durable_stream: &DurableStream,
+        handle: HandleStream,
+    ) -> Result<EventStream, EventStoreError>;
+
+    fn stream_to_durable(
+        &self,
+        durable_stream: &DurableStream,
+        event_query: &EventQuery,
+        handle: HandleStream,
+    ) -> Result<EventStream, EventStoreError>;
 }

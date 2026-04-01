@@ -1,6 +1,6 @@
 # FACTSTR
 
-One Rust contract for facts, queries, and projection updates.
+One Rust contract for facts, queries, streams, and durable streams.
 
 ## Current status
 
@@ -8,16 +8,16 @@ One Rust contract for facts, queries, and projection updates.
 Rust
 
 **Stores**  
-Memory · PostgreSQL
+Memory · SQLite · PostgreSQL
 
 **Implemented now**  
-Append · Query · Conditional append · Projection updates
+Append · Query · Conditional append · Streams
 
 **Documentation**  
 GitHub Pages docs
 
 **Planned next**  
-Embedded persistence · Durable subscriber cursors · Replay
+Cross-store durable streams
 
 **License**  
 Apache-2.0 / MIT
@@ -25,6 +25,6 @@ Apache-2.0 / MIT
 - [Getting Started](getting-started.md)
 - [Examples](examples.md)
 - [Core Concepts](core-concepts.md)
-- [Projection Updates](live-subscriptions.md)
+- [Streams](streams.md)
 - [Reference](reference.md)
 - [Stores](stores.md)

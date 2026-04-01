@@ -12,12 +12,12 @@ This repository currently contains:
 
 - a shared runtime contract crate
 - a memory store
+- an embedded SQLite store
 - a PostgreSQL store
 - a reusable conformance-test crate for store implementations
 
 It does not currently contain:
 
-- an embedded persistent store
 - HTTP or gRPC adapters
 
 ## Workspace
@@ -27,12 +27,15 @@ flowchart LR
     factstore["factstore<br/>shared runtime contract"]
     conformance["factstore-conformance<br/>reusable semantic test support"]
     memory["factstore-memory<br/>in-memory store"]
+    sqlite["factstore-sqlite<br/>SQLite store"]
     postgres["factstore-postgres<br/>PostgreSQL store"]
 
     conformance --> factstore
     memory --> factstore
+    sqlite --> factstore
     postgres --> factstore
     memory -. test/dev dependency .-> conformance
+    sqlite -. test/dev dependency .-> conformance
     postgres -. test/dev dependency .-> conformance
 ```
 
@@ -41,12 +44,14 @@ Workspace members:
 - `factstore`
 - `factstore-conformance`
 - `factstore-memory`
+- `factstore-sqlite`
 - `factstore-postgres`
 
 Crate roles:
 
 - `factstore`: shared runtime contract crate
 - `factstore-memory`: publishable in-memory runtime store
+- `factstore-sqlite`: publishable embedded SQLite runtime store
 - `factstore-postgres`: publishable PostgreSQL runtime store
 - `factstore-conformance`: internal reusable test-support crate, not intended for publishing now
 
@@ -57,7 +62,8 @@ The current shared contract supports:
 - append of one or more events
 - query
 - conditional append with typed conflict failure
-- live subscriptions for future committed batches, including filtered subscriptions via `EventQuery`
+- streams for future committed batches, including filtered streams via `EventQuery`
+- durable stream surface in the shared contract
 - event-type filtering
 - payload-predicate filtering
 - explicit separation of:
@@ -72,9 +78,10 @@ The current public contract types are:
 - `EventQuery`
 - `QueryResult`
 - `AppendResult`
-- `HandleEvents`
-- `SubscriptionHandlerError`
-- `EventSubscription`
+- `HandleStream`
+- `StreamHandlerError`
+- `DurableStream`
+- `EventStream`
 - `EventStore`
 - `EventStoreError`
 
@@ -111,19 +118,30 @@ These are the load-bearing behaviors implemented today.
 - failed conditional append does not partially append a batch
 - under the current Rust contract, failed appends also do not consume sequence numbers that later successful appends would observe
 
-### Live Subscriptions
+### Streams
 
-- subscriptions are live only and do not replay history
-- `subscribe_all(handle)` invokes a handler for all future committed batches
-- `subscribe_to(&EventQuery, handle)` invokes a handler only for future committed facts that match that query
+- `stream_all(handle)` invokes a handler for all future committed batches
+- `stream_to(&EventQuery, handle)` invokes a handler only for future committed facts that match that query
 - notifications happen only after a successful commit
 - each committed append batch is delivered as one batch
 - mixed committed batches are delivered as one filtered batch when matches exist
 - delivery order follows committed global sequence order
 - failed conditional append delivers nothing
 - multiple subscribers can observe the same committed batches
-- `EventSubscription::unsubscribe()` stops future delivery for that subscriber
+- `EventStream::unsubscribe()` stops future delivery for that subscriber
 - handler failure does not roll back append success
+
+### Durable Streams
+
+- `stream_all_durable(&DurableStream, handle)` resumes from a stored durable cursor, replays committed batches after it, then continues with future committed delivery
+- `stream_to_durable(&DurableStream, &EventQuery, handle)` does the same with query-defined filtering
+- replay begins strictly after the stored durable cursor
+- replay/live transition must not duplicate or skip committed batches
+- durable cursors must not advance past undelivered committed facts
+- Memory implements durable streams within the lifetime of one `MemoryStore` instance
+- SQLite implements durable streams with persisted cursors and replay across restart
+- PostgreSQL implements durable streams with persisted cursors and replay across restart
+- shared reusable durable-stream conformance exists in `factstore-conformance`
 
 ## Query Model
 
@@ -217,6 +235,17 @@ It keeps:
 - query matching in plain Rust
 - no persistence
 
+### factstore-sqlite
+
+The SQLite store is the embedded persistent implementation.
+
+It keeps:
+
+- committed events in SQLite
+- explicit global sequence allocation
+- exact query/filter matching in Rust where needed
+- persisted durable stream cursors and committed batch history
+
 ### factstore-postgres
 
 The PostgreSQL store implements the same contract with SQLx.
@@ -256,9 +285,10 @@ Semantic expectations are shared across store implementations.
 
 - `factstore-conformance` owns reusable semantic tests
 - `factstore-memory/tests/` uses those conformance helpers
+- `factstore-sqlite/tests/` uses the same conformance helpers
 - `factstore-postgres/tests/` uses the same conformance helpers
 
-This means both stores are checked against the same current contract for:
+This means the stores are checked against the same current contract for:
 
 - append sequencing
 - query ordering
@@ -267,6 +297,8 @@ This means both stores are checked against the same current contract for:
 - context-version behavior
 - conditional append conflict handling
 - failed conditional append not consuming later sequence numbers
+- shared stream behavior
+- shared durable-stream behavior
 
 ## Running Checks
 
@@ -383,14 +415,14 @@ Implemented now:
 
 - shared contract
 - memory store
+- sqlite store
 - postgres store
 - reusable store conformance tests
-- live subscriptions
+- streams
+- durable streams in Memory, SQLite, and PostgreSQL
 
 Not implemented now:
 
-- durable subscriber cursors and replay
-- embedded persistent store
 - file store
 - transport adapters
 - performance/index tuning beyond the current postgres baseline indexes

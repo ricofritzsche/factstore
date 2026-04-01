@@ -53,4 +53,4 @@ Sequence numbers are:
 - monotonic
 - ordered across the whole store
 
-Reads return events in ascending sequence order, and live subscription delivery follows that same committed order.
+Reads return events in ascending sequence order, and stream delivery follows that same committed order.

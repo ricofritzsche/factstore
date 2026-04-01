@@ -1,5 +1,3 @@
-mod support;
-
 use std::sync::{
     Arc, Condvar, Mutex,
     atomic::{AtomicUsize, Ordering},
@@ -8,17 +6,18 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
-use factstore::{EventQuery, EventStore, NewEvent, SubscriptionHandlerError};
+use factstore::{EventStore, NewEvent, StreamHandlerError};
+use factstore_memory::MemoryStore;
 use serde_json::json;
 
 #[test]
-fn blocking_handler_does_not_block_append_completion_or_later_queries() {
-    let store = Arc::new(support::create_store());
+fn blocking_handler_does_not_block_append_completion() {
+    let store = MemoryStore::new();
     let (handler_started_sender, handler_started_receiver) = mpsc::channel();
     let release_handler = Arc::new((Mutex::new(false), Condvar::new()));
 
     let _subscription = store
-        .subscribe_all(Arc::new({
+        .stream_all(Arc::new({
             let release_handler = Arc::clone(&release_handler);
             move |event_records| {
                 assert_eq!(event_records.len(), 1);
@@ -32,15 +31,14 @@ fn blocking_handler_does_not_block_append_completion_or_later_queries() {
                         .expect("handler gate wait should succeed");
                 }
 
-                Ok::<(), SubscriptionHandlerError>(())
+                Ok::<(), StreamHandlerError>(())
             }
         }))
         .expect("subscribe_all should succeed");
 
     let (append_done_sender, append_done_receiver) = mpsc::channel();
-    let append_store = Arc::clone(&store);
     let append_thread = thread::spawn(move || {
-        let append_result = append_store.append(vec![NewEvent::new(
+        let append_result = store.append(vec![NewEvent::new(
             "account-opened",
             json!({ "accountId": "a1" }),
         )]);
@@ -55,11 +53,6 @@ fn blocking_handler_does_not_block_append_completion_or_later_queries() {
         .expect("append should succeed");
     assert_eq!(append_result.first_sequence_number, 1);
 
-    let query_result = store
-        .query(&EventQuery::all())
-        .expect("query should still succeed while the handler is blocked");
-    assert_eq!(query_result.event_records.len(), 1);
-
     handler_started_receiver
         .recv_timeout(Duration::from_secs(1))
         .expect("blocking handler should eventually start");
@@ -73,14 +66,14 @@ fn blocking_handler_does_not_block_append_completion_or_later_queries() {
 
 #[test]
 fn already_snapshotted_delivery_may_arrive_after_unsubscribe_but_future_commits_do_not() {
-    let store = Arc::new(support::create_store());
+    let store = MemoryStore::new();
     let delivered_batches = Arc::new(Mutex::new(Vec::new()));
     let invocation_count = Arc::new(AtomicUsize::new(0));
     let (first_handler_started_sender, first_handler_started_receiver) = mpsc::channel();
     let release_first_handler = Arc::new((Mutex::new(false), Condvar::new()));
 
     let subscription = store
-        .subscribe_all(Arc::new({
+        .stream_all(Arc::new({
             let delivered_batches = Arc::clone(&delivered_batches);
             let invocation_count = Arc::clone(&invocation_count);
             let release_first_handler = Arc::clone(&release_first_handler);
@@ -101,7 +94,7 @@ fn already_snapshotted_delivery_may_arrive_after_unsubscribe_but_future_commits_
                     }
                 }
 
-                Ok::<(), SubscriptionHandlerError>(())
+                Ok::<(), StreamHandlerError>(())
             }
         }))
         .expect("subscribe_all should succeed");

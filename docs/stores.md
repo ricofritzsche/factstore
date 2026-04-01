@@ -1,6 +1,6 @@
 # Stores
 
-FACTSTR currently includes two store implementations.
+FACTSTR currently includes three store implementations.
 
 ## Memory Store
 
@@ -17,9 +17,45 @@ It implements:
 - append
 - query
 - conditional append
-- live subscriptions
+- `stream_all`
+- `stream_to`
+- `stream_all_durable`
+- `stream_to_durable`
 
-Operationally, it keeps all state in memory and does not persist across process restarts.
+Its durable stream boundary is explicit:
+
+- durable stream cursor state is kept only for the lifetime of one `MemoryStore` instance
+- replay/catch-up is real within that store instance
+- recreating the store starts with a fresh in-memory durable cursor state
+
+## SQLite Store
+
+The SQLite store is the embedded persistent implementation.
+
+It is useful for:
+
+- local persistence without external infrastructure
+- feature-local durable replay/catch-up
+- validating the shared contract against an embedded store
+
+It implements:
+
+- append
+- query
+- conditional append
+- `stream_all`
+- `stream_to`
+- `stream_all_durable`
+- `stream_to_durable`
+
+Operationally, it differs from the other stores by:
+
+- persisting events and durable stream cursors in SQLite
+- replaying committed batches from stored cursors before switching to future committed delivery
+- bounding durable replay correctness on persisted `append_batches` history
+
+Operationally, it persists committed events and durable stream cursors across process restarts.
+Durable replay still depends on persisted `append_batches` history, so older databases created before that history existed are rejected for durable replay instead of being backfilled automatically.
 
 ## PostgreSQL Store
 
@@ -36,13 +72,17 @@ It implements:
 - append
 - query
 - conditional append
-- live subscriptions
+- `stream_all`
+- `stream_to`
+- `stream_all_durable`
+- `stream_to_durable`
 
 Operationally, it differs from the memory store by:
 
-- persisting committed events in PostgreSQL
+- persisting committed events and durable stream cursors in PostgreSQL
 - using SQL transactions and indexes
 - using an internal worker thread so the synchronous store API remains safe to call from inside a running Tokio runtime
+- rejecting durable replay on older databases that do not have contiguous `append_batches` history
 
 ## Shared Semantics Across Stores
 
@@ -52,8 +92,12 @@ Even though the mechanics differ, the intended observable behavior remains share
 - conditional append semantics
 - sequence allocation guarantees
 - explicit query result meanings
-- live subscription behavior
+- future committed stream behavior
 
-## Not Implemented Yet
+## Shared Durable-Stream Status
 
-An embedded persistent store is still future work. It is part of the project direction, but it is not implemented in the current repository state.
+Durable streams are implemented across all three stores.
+
+- Memory keeps durable stream state for the lifetime of one store instance
+- SQLite persists durable stream cursors and replay state across restart, with an explicit `append_batches` history boundary for older databases
+- PostgreSQL persists durable stream cursors and replay state across restart, with an explicit `append_batches` history boundary for older databases
