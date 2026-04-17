@@ -260,27 +260,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "factstore"
+name = "factstr"
 version = "0.1.0"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
-name = "factstore-example-bank-slices-cli"
+name = "factstr-example-bank-slices-cli"
 version = "0.1.0"
 dependencies = [
- "factstore",
- "factstore-sqlite",
+ "factstr",
+ "factstr-sqlite",
  "rustyline",
  "serde_json",
 ]
 
 [[package]]
-name = "factstore-sqlite"
+name = "factstr-sqlite"
 version = "0.1.0"
 dependencies = [
- "factstore",
+ "factstr",
  "serde_json",
  "sqlx",
  "tokio",

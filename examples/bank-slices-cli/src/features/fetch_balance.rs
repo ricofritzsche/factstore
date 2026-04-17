@@ -19,7 +19,7 @@
 //!   wait until the projection has observed their committed batch
 
 use crate::features::open_account::ensure_account_exists;
-use factstore::{EventQuery, EventRecord, EventStore, EventStream, StreamHandlerError};
+use factstr::{EventQuery, EventRecord, EventStore, EventStream, StreamHandlerError};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::{Arc, Condvar, Mutex};

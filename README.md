@@ -1,6 +1,6 @@
 # FACTSTR
 
-[FACTSTR](https://factstore.ricofritzsche.me) (pronounced: factstore) is a Rust event store built around facts, query-defined consistency context, and multiple store implementations behind one shared contract.
+[FACTSTR](https://factstr.ricofritzsche.me) (pronounced: factstr) is a Rust event store built around facts, query-defined consistency context, and multiple store implementations behind one shared contract.
 
 ## Documentation
 
@@ -24,16 +24,16 @@ It does not currently contain:
 
 ```mermaid
 flowchart LR
-    factstore["factstore<br/>shared runtime contract"]
-    conformance["factstore-conformance<br/>reusable semantic test support"]
-    memory["factstore-memory<br/>in-memory store"]
-    sqlite["factstore-sqlite<br/>SQLite store"]
-    postgres["factstore-postgres<br/>PostgreSQL store"]
+    factstr["factstr<br/>shared runtime contract"]
+    conformance["factstr-conformance<br/>reusable semantic test support"]
+    memory["factstr-memory<br/>in-memory store"]
+    sqlite["factstr-sqlite<br/>SQLite store"]
+    postgres["factstr-postgres<br/>PostgreSQL store"]
 
-    conformance --> factstore
-    memory --> factstore
-    sqlite --> factstore
-    postgres --> factstore
+    conformance --> factstr
+    memory --> factstr
+    sqlite --> factstr
+    postgres --> factstr
     memory -. test/dev dependency .-> conformance
     sqlite -. test/dev dependency .-> conformance
     postgres -. test/dev dependency .-> conformance
@@ -41,19 +41,19 @@ flowchart LR
 
 Workspace members:
 
-- `factstore`
-- `factstore-conformance`
-- `factstore-memory`
-- `factstore-sqlite`
-- `factstore-postgres`
+- `factstr`
+- `factstr-conformance`
+- `factstr-memory`
+- `factstr-sqlite`
+- `factstr-postgres`
 
 Crate roles:
 
-- `factstore`: shared runtime contract crate
-- `factstore-memory`: publishable in-memory runtime store
-- `factstore-sqlite`: publishable embedded SQLite runtime store
-- `factstore-postgres`: publishable PostgreSQL runtime store
-- `factstore-conformance`: internal reusable test-support crate, not intended for publishing now
+- `factstr`: shared runtime contract crate
+- `factstr-memory`: publishable in-memory runtime store
+- `factstr-sqlite`: publishable embedded SQLite runtime store
+- `factstr-postgres`: publishable PostgreSQL runtime store
+- `factstr-conformance`: internal reusable test-support crate, not intended for publishing now
 
 ## What Is Implemented
 
@@ -143,7 +143,7 @@ These are the load-bearing behaviors implemented today.
 - Memory implements durable streams within one `MemoryStore` instance only
 - SQLite implements durable streams with persisted cursors and replay across restart
 - PostgreSQL implements durable streams with persisted cursors and replay across restart
-- shared reusable durable-stream conformance exists in `factstore-conformance`
+- shared reusable durable-stream conformance exists in `factstr-conformance`
 
 ## Query Model
 
@@ -226,7 +226,7 @@ sequenceDiagram
 
 ## Store Implementations
 
-### factstore-memory
+### factstr-memory
 
 The memory store is the semantic reference implementation.
 
@@ -237,7 +237,7 @@ It keeps:
 - query matching in plain Rust
 - no persistence
 
-### factstore-sqlite
+### factstr-sqlite
 
 The SQLite store is the embedded persistent implementation.
 
@@ -248,7 +248,7 @@ It keeps:
 - exact query/filter matching in Rust where needed
 - persisted durable stream cursors and committed batch history
 
-### factstore-postgres
+### factstr-postgres
 
 The PostgreSQL store implements the same contract with SQLx.
 
@@ -285,10 +285,10 @@ Important current PostgreSQL note:
 
 Semantic expectations are shared across store implementations.
 
-- `factstore-conformance` owns reusable semantic tests
-- `factstore-memory/tests/` uses those conformance helpers
-- `factstore-sqlite/tests/` uses the same conformance helpers
-- `factstore-postgres/tests/` uses the same conformance helpers
+- `factstr-conformance` owns reusable semantic tests
+- `factstr-memory/tests/` uses those conformance helpers
+- `factstr-sqlite/tests/` uses the same conformance helpers
+- `factstr-postgres/tests/` uses the same conformance helpers
 
 This means the stores are checked against the same current contract for:
 
@@ -314,13 +314,13 @@ cargo check
 Run memory-store tests:
 
 ```bash
-cargo test -p factstore-memory
+cargo test -p factstr-memory
 ```
 
 Run postgres-store tests:
 
 ```bash
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres cargo test -p factstore-postgres
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres cargo test -p factstr-postgres
 ```
 
 Run the full workspace test suite with postgres enabled:
@@ -337,23 +337,23 @@ Use the shared contract only:
 
 ```toml
 [dependencies]
-factstore = { git = "https://github.com/ricofritzsche/factstore.git" }
+factstr = { git = "https://github.com/ricofritzsche/factstr.git" }
 ```
 
 Use the in-memory store:
 
 ```toml
 [dependencies]
-factstore = { git = "https://github.com/ricofritzsche/factstore.git" }
-factstore-memory = { git = "https://github.com/ricofritzsche/factstore.git" }
+factstr = { git = "https://github.com/ricofritzsche/factstr.git" }
+factstr-memory = { git = "https://github.com/ricofritzsche/factstr.git" }
 ```
 
 Use the PostgreSQL store:
 
 ```toml
 [dependencies]
-factstore = { git = "https://github.com/ricofritzsche/factstore.git" }
-factstore-postgres = { git = "https://github.com/ricofritzsche/factstore.git" }
+factstr = { git = "https://github.com/ricofritzsche/factstr.git" }
+factstr-postgres = { git = "https://github.com/ricofritzsche/factstr.git" }
 ```
 
 ## Publish Readiness
@@ -362,38 +362,38 @@ This workspace is being prepared for future publishing, but this repository task
 
 Current publishability decision:
 
-- `factstore`: intended to be publishable
-- `factstore-memory`: intended to be publishable
-- `factstore-postgres`: intended to be publishable
-- `factstore-conformance`: kept internal for now with `publish = false`
+- `factstr`: intended to be publishable
+- `factstr-memory`: intended to be publishable
+- `factstr-postgres`: intended to be publishable
+- `factstr-conformance`: kept internal for now with `publish = false`
 
 ## Packaging Verification
 
 Safe packaging checks:
 
 ```bash
-cargo publish --dry-run -p factstore
-cargo publish --dry-run -p factstore-memory
-cargo publish --dry-run -p factstore-postgres
+cargo publish --dry-run -p factstr
+cargo publish --dry-run -p factstr-memory
+cargo publish --dry-run -p factstr-postgres
 ```
 
 For the current interdependent workspace, the most accurate first verification is:
 
 ```bash
-cargo publish --dry-run --workspace --exclude factstore-conformance
+cargo publish --dry-run --workspace --exclude factstr-conformance
 ```
 
 Inspect package contents:
 
 ```bash
-cargo package --list -p factstore
-cargo package --list -p factstore-memory
-cargo package --list -p factstore-postgres
+cargo package --list -p factstr
+cargo package --list -p factstr-memory
+cargo package --list -p factstr-postgres
 ```
 
 ## PostgreSQL Test Setup
 
-`factstore-postgres` integration tests require `DATABASE_URL`.
+`factstr-postgres` integration tests require `DATABASE_URL`.
 
 Requirements:
 
@@ -402,7 +402,7 @@ Requirements:
 
 Current test behavior:
 
-- each test run creates a unique schema named like `factstore_test_<timestamp>_<id>`
+- each test run creates a unique schema named like `factstr_test_<timestamp>_<id>`
 - the store under test connects with that schema in `search_path`
 - tables are created inside that schema
 - the current helper does not automatically drop those schemas after the run

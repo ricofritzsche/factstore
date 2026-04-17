@@ -1,5 +1,5 @@
 [package]
-name = "factstore-example-bank-slices-cli"
+name = "factstr-example-bank-slices-cli"
 version = "0.1.0"
 edition = "2024"
 publish = false
@@ -7,7 +7,7 @@ publish = false
 [workspace]
 
 [dependencies]
-factstore = { path = "../../factstore" }
-factstore-sqlite = { path = "../../factstore-sqlite" }
+factstr = { path = "../../factstr" }
+factstr-sqlite = { path = "../../factstr-sqlite" }
 rustyline = "14"
 serde_json = "1"

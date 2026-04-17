@@ -25,22 +25,22 @@ The main use is still the same: a feature slice owns a query model, registers a 
 - replay/live transition has no duplicates or gaps
 - the durable cursor does not advance past undelivered committed facts
 
-Shared reusable durable-stream conformance now exists in `factstore-conformance`.
+Shared reusable durable-stream conformance now exists in `factstr-conformance`.
 Remaining store-specific tests prove only store-local boundaries such as restart persistence, in-memory lifetime limits, and explicit replay-history rejection on older persistent databases.
 
 ## Current Store Status
 
-- `factstore-memory`
+- `factstr-memory`
   - implements `stream_all`, `stream_to`, `stream_all_durable`, and `stream_to_durable`
   - implements durable streams within one `MemoryStore` instance only
   - keeps durable stream cursor state only for the lifetime of one `MemoryStore` instance
-- `factstore-sqlite`
+- `factstr-sqlite`
   - implements `stream_all`, `stream_to`, `stream_all_durable`, and `stream_to_durable`
   - persists durable stream cursors and replay state across restart
   - replays committed batches from stored cursors before switching to future committed delivery
   - rejects durable replay on older databases that do not have contiguous `append_batches` history
   - durable replay depends on persisted `append_batches` history
-- `factstore-postgres`
+- `factstr-postgres`
   - implements `stream_all`, `stream_to`, `stream_all_durable`, and `stream_to_durable`
   - persists durable stream cursors and replay state across restart
   - replays committed batches from stored cursors before switching to future committed delivery

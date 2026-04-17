@@ -1,7 +1,7 @@
 site_name: FACTSTR
 site_description: Rust event store built around facts, query-defined consistency context, and multiple store implementations behind one shared contract.
-repo_url: https://github.com/ricofritzsche/factstore
-repo_name: ricofritzsche/factstore
+repo_url: https://github.com/ricofritzsche/factstr
+repo_name: ricofritzsche/factstr
 
 theme:
   name: material

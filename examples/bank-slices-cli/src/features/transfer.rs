@@ -22,7 +22,7 @@
 
 use crate::features::fetch_balance::BalanceProjectionRuntime;
 use crate::features::open_account::ensure_account_exists;
-use factstore::{EventStore, NewEvent};
+use factstr::{EventStore, NewEvent};
 use serde_json::json;
 use std::error::Error;
 use std::time::{SystemTime, UNIX_EPOCH};

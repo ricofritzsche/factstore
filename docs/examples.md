@@ -6,7 +6,7 @@ These examples are the shortest concrete code paths for the current FACTSTR API.
 
 Source:
 
-- [`examples/basic-memory/src/main.rs`](https://github.com/ricofritzsche/factstore/blob/main/examples/basic-memory/src/main.rs)
+- [`examples/basic-memory/src/main.rs`](https://github.com/ricofritzsche/factstr/blob/main/examples/basic-memory/src/main.rs)
 
 Run it:
 
@@ -28,7 +28,7 @@ What it proves:
 
 Source:
 
-- [`examples/account-projection/src/main.rs`](https://github.com/ricofritzsche/factstore/blob/main/examples/account-projection/src/main.rs)
+- [`examples/account-projection/src/main.rs`](https://github.com/ricofritzsche/factstr/blob/main/examples/account-projection/src/main.rs)
 
 Run it:
 
@@ -52,8 +52,8 @@ These examples stay on the memory store because it is the fastest way to underst
 
 Source:
 
-- [`examples/bank-slices-cli/src/main.rs`](https://github.com/ricofritzsche/factstore/blob/main/examples/bank-slices-cli/src/main.rs)
-- [`examples/bank-slices-cli/README.md`](https://github.com/ricofritzsche/factstore/blob/main/examples/bank-slices-cli/README.md)
+- [`examples/bank-slices-cli/src/main.rs`](https://github.com/ricofritzsche/factstr/blob/main/examples/bank-slices-cli/src/main.rs)
+- [`examples/bank-slices-cli/README.md`](https://github.com/ricofritzsche/factstr/blob/main/examples/bank-slices-cli/README.md)
 
 Run it:
 

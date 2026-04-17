@@ -15,7 +15,7 @@
 //! - the projection returns formatted history for the CLI
 
 use crate::features::open_account::ensure_account_exists;
-use factstore::{EventFilter, EventQuery, EventStore};
+use factstr::{EventFilter, EventQuery, EventStore};
 use serde_json::json;
 use std::error::Error;
 

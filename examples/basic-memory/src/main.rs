@@ -1,5 +1,5 @@
-use factstore::{EventQuery, EventStore, NewEvent};
-use factstore_memory::MemoryStore;
+use factstr::{EventQuery, EventStore, NewEvent};
+use factstr_memory::MemoryStore;
 use serde_json::json;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

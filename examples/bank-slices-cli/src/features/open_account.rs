@@ -13,7 +13,7 @@
 //!   context is still empty
 //! - `query(...)` is reused by `ensure_account_exists(...)`
 
-use factstore::{EventFilter, EventQuery, EventStore, EventStoreError, NewEvent};
+use factstr::{EventFilter, EventQuery, EventStore, EventStoreError, NewEvent};
 use serde_json::json;
 use std::error::Error;
 

@@ -10,8 +10,8 @@ This page is the shortest path to running the current FACTSTR repository and und
 ## Clone The Repository
 
 ```bash
-git clone https://github.com/ricofritzsche/factstore.git
-cd factstore
+git clone https://github.com/ricofritzsche/factstr.git
+cd factstr
 ```
 
 ## Check The Workspace
@@ -27,7 +27,7 @@ This verifies the shared contract crate, the memory store, the SQLite store, the
 Run the in-memory store tests first:
 
 ```bash
-cargo test -p factstore-memory
+cargo test -p factstr-memory
 ```
 
 This is the simplest way to see the current semantic contract in action:
@@ -71,7 +71,7 @@ That example shows:
 Set `DATABASE_URL` to a PostgreSQL database where the configured user can create schemas, then run:
 
 ```bash
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres cargo test -p factstore-postgres
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres cargo test -p factstr-postgres
 ```
 
 The PostgreSQL tests create a fresh schema per test run and exercise the same conformance behavior as the memory store.
@@ -86,6 +86,6 @@ After these commands, you should know:
 - a feature slice can stream relevant future facts with `stream_to(&EventQuery, handle)`
 - the SQLite bank example uses a real stream-driven read-side slice while keeping command and query naming separate
 - all three stores implement durable replay/catch-up through `stream_*_durable(...)`
-- shared reusable durable-stream conformance exists in `factstore-conformance`
+- shared reusable durable-stream conformance exists in `factstr-conformance`
 - the current scope is still intentionally narrow and focused on core behavior
 - there are two direct runnable memory-store examples you can build on next

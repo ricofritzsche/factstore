@@ -223,35 +223,35 @@ dependencies = [
 ]
 
 [[package]]
-name = "factstore"
+name = "factstr"
 version = "0.1.0"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
-name = "factstore-conformance"
+name = "factstr-conformance"
 version = "0.1.0"
 dependencies = [
- "factstore",
+ "factstr",
  "serde_json",
 ]
 
 [[package]]
-name = "factstore-memory"
+name = "factstr-memory"
 version = "0.1.0"
 dependencies = [
- "factstore",
- "factstore-conformance",
+ "factstr",
+ "factstr-conformance",
  "serde_json",
 ]
 
 [[package]]
-name = "factstore-postgres"
+name = "factstr-postgres"
 version = "0.1.0"
 dependencies = [
- "factstore",
- "factstore-conformance",
+ "factstr",
+ "factstr-conformance",
  "serde_json",
  "sqlx",
  "tokio",
@@ -259,11 +259,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "factstore-sqlite"
+name = "factstr-sqlite"
 version = "0.1.0"
 dependencies = [
- "factstore",
- "factstore-conformance",
+ "factstr",
+ "factstr-conformance",
  "serde_json",
  "sqlx",
  "tokio",

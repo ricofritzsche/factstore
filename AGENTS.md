@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository builds `factstore`, a Rust event store centered on facts, command-context consistency, and multiple store implementations.
+This repository builds `factstr`, a Rust event store centered on facts, command-context consistency, and multiple store implementations.
 
 Work in this repository must preserve clear semantics, small local ownership, and stable behavior.
 
@@ -11,7 +11,7 @@ The goal is to build a durable, understandable system.
 
 ## Project Direction
 
-`factstore` is built around these ideas:
+`factstr` is built around these ideas:
 
 - events are immutable facts
 - facts live in an append-only log
@@ -305,10 +305,10 @@ Reflect the production structure in the test layout when useful.
 
 Examples:
 
-- `factstore-memory/tests/append.rs`
-- `factstore-memory/tests/query.rs`
-- `factstore-memory/tests/conditional_append.rs`
-- `factstore-memory/tests/payload_match.rs`
+- `factstr-memory/tests/append.rs`
+- `factstr-memory/tests/query.rs`
+- `factstr-memory/tests/conditional_append.rs`
+- `factstr-memory/tests/payload_match.rs`
 
 A growing semantic test suite should not stay embedded in one `src/lib.rs`.
 

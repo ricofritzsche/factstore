@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
-use factstore::{
+use factstr::{
     EventFilter, EventQuery, EventRecord, EventStore, NewEvent, StreamHandlerError,
 };
-use factstore_memory::MemoryStore;
+use factstr_memory::MemoryStore;
 use serde_json::json;
 
 #[derive(Debug, Default)]

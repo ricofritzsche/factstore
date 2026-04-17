@@ -3,7 +3,7 @@ mod features;
 
 use crate::cli::{Command, Mode, Startup};
 use crate::features::fetch_balance::BalanceProjectionRuntime;
-use factstore_sqlite::SqliteStore;
+use factstr_sqlite::SqliteStore;
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 use std::error::Error;
@@ -190,7 +190,7 @@ fn ensure_database_parent_exists(database_path: &Path) -> Result<(), Box<dyn Err
 #[cfg(test)]
 mod tests {
     use super::*;
-    use factstore::EventStore;
+    use factstr::EventStore;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -292,7 +292,7 @@ mod tests {
 
         let store = SqliteStore::open(&database_path).expect("sqlite store should reopen");
         let query_result = store
-            .query(&factstore::EventQuery::all())
+            .query(&factstr::EventQuery::all())
             .expect("query should succeed");
         assert_eq!(query_result.event_records.len(), 6);
 

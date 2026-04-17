@@ -3,26 +3,26 @@
 version = 4
 
 [[package]]
-name = "factstore"
+name = "factstr"
 version = "0.1.0"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
-name = "factstore-example-live-subscriptions"
+name = "factstr-example-live-subscriptions"
 version = "0.1.0"
 dependencies = [
- "factstore",
- "factstore-memory",
+ "factstr",
+ "factstr-memory",
  "serde_json",
 ]
 
 [[package]]
-name = "factstore-memory"
+name = "factstr-memory"
 version = "0.1.0"
 dependencies = [
- "factstore",
+ "factstr",
  "serde_json",
 ]
 

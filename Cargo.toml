@@ -1,9 +1,9 @@
 [workspace]
 members = [
-    "factstore",
-    "factstore-conformance",
-    "factstore-memory",
-    "factstore-postgres",
-    "factstore-sqlite",
+    "factstr",
+    "factstr-conformance",
+    "factstr-memory",
+    "factstr-postgres",
+    "factstr-sqlite",
 ]
 resolver = "2"
