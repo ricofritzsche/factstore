@@ -57,7 +57,7 @@ Operationally, it differs from the other stores by:
 
 Operationally, it persists committed events and durable stream cursors across process restarts. Durable replay still depends on persisted `append_batches` history, so older databases created before that history existed are rejected for durable replay instead of being backfilled automatically.
 
-For guidance on when SQLite is a good fit and when it is not, see [SQLite Store: What It Is For, and When Not to Use It](docs/stores/sqlite.md).
+For guidance on when SQLite is a good fit and when it is not, see [SQLite Store: What It Is For, and When Not to Use It](sqlite.md).
 
 ## PostgreSQL Store
 

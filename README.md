@@ -11,7 +11,7 @@ It is meant to be easy to start with: append the first fact, read the relevant f
 - Getting started: docs/getting-started.md
 - Streams: docs/streams.md
 - Stores: docs/stores.md
-- SQLite store guidance: docs/stores/sqlite.md
+- SQLite store guidance: docs/sqlite.md
 - Reference: docs/reference.md
 
 ## Why FACTSTR
@@ -94,7 +94,7 @@ Durable streams in memory are limited to the lifetime of one `MemoryStore` insta
 
 ### `factstr-sqlite`
 
-The SQLite store is the embedded persistent implementation. For guidance on when SQLite is the right store and when it is not, see [docs/stores/sqlite.md](docs/stores/sqlite.md).
+The SQLite store is the embedded persistent implementation. For guidance on when SQLite is the right store and when it is not, see [docs/sqlite.md](docs/sqlite.md).
 
 Use it for:
 
