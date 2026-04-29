@@ -1,0 +1,21 @@
+{
+  "name": "factstr-node",
+  "version": "0.1.0",
+  "description": "TypeScript and Node package for the FACTSTR memory-backed adapter.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "MIT OR Apache-2.0",
+  "files": [
+    "README.md",
+    "index.js",
+    "index.d.ts",
+    "factstr-node.node",
+    "factstr-node.*.node",
+    "scripts/build-package.mjs"
+  ],
+  "scripts": {
+    "build": "node ./scripts/build-package.mjs",
+    "pack:local": "npm pack",
+    "smoke:packed": "npm run build && npm run pack:local && npm --prefix smoke run install:packed && npm --prefix smoke run build && npm --prefix smoke run smoke"
+  }
+}

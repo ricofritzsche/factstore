@@ -1,0 +1,27 @@
+[package]
+name = "factstr-node"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Node language adapter for factstr built on the explicit interop DTO boundary."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ricofritzsche/factstr.git"
+homepage = "https://factstr.ricofritzsche.me"
+readme = "../README.md"
+keywords = ["eventstore", "node", "napi", "interop", "facts"]
+categories = ["api-bindings"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+factstr = { version = "0.1.0", path = "../factstr" }
+factstr-interop = { version = "0.1.0", path = "../factstr-interop" }
+factstr-memory = { version = "0.1.0", path = "../factstr-memory" }
+napi = { version = "2", default-features = false, features = ["dyn-symbols", "napi8", "serde-json"] }
+napi-derive = "2"
+serde_json = "1"
+
+[build-dependencies]
+napi-build = "2"

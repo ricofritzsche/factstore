@@ -1,0 +1,53 @@
+0 verbose cli /opt/homebrew/Cellar/node/25.7.0/bin/node /opt/homebrew/bin/npm
+1 info using npm@11.10.1
+2 info using node@v25.7.0
+3 silly config load:file:/opt/homebrew/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/rico.fritzsche/code/factstore/factstr-node/smoke/.npmrc
+5 silly config load:file:/Users/rico.fritzsche/.npmrc
+6 silly config load:file:/opt/homebrew/etc/npmrc
+7 verbose title npm install /Users/rico.fritzsche/code/factstore/factstr-node/factstr-node-0.1.0.tgz /Users/rico.fritzsche/code/factstore/factstr-node/npm/darwin-arm64/factstr-node-darwin-arm64-0.1.0.tgz
+8 verbose argv "install" "--offline" "--no-package-lock" "--no-save" "/Users/rico.fritzsche/code/factstore/factstr-node/factstr-node-0.1.0.tgz" "/Users/rico.fritzsche/code/factstore/factstr-node/npm/darwin-arm64/factstr-node-darwin-arm64-0.1.0.tgz"
+9 verbose logfile logs-max:10 dir:/Users/rico.fritzsche/code/factstore/factstr-node/.npm-cache/_logs/2026-04-29T11_46_01_898Z-
+10 verbose logfile /Users/rico.fritzsche/code/factstore/factstr-node/.npm-cache/_logs/2026-04-29T11_46_01_898Z-debug-0.log
+11 silly logfile start cleaning logs, removing 1 files
+12 silly packumentCache heap:4496293888 maxSize:1124073472 maxEntrySize:562036736
+13 silly logfile done cleaning log files
+14 silly idealTree buildDeps
+15 silly fetch manifest factstr-node@file:../factstr-node-0.1.0.tgz
+16 silly fetch manifest factstr-node-darwin-arm64@file:../npm/darwin-arm64/factstr-node-darwin-arm64-0.1.0.tgz
+17 silly placeDep ROOT factstr-node@0.1.0 REPLACE for:  want: file:../factstr-node-0.1.0.tgz
+18 silly placeDep ROOT factstr-node-darwin-arm64@0.1.0 OK for:  want: file:../npm/darwin-arm64/factstr-node-darwin-arm64-0.1.0.tgz
+19 silly fetch manifest factstr-node-darwin-arm64@0.1.0
+20 silly packumentCache full:https://registry.npmjs.org/factstr-node-darwin-arm64 cache-miss
+21 silly fetch manifest factstr-node-darwin-x64@0.1.0
+22 silly packumentCache full:https://registry.npmjs.org/factstr-node-darwin-x64 cache-miss
+23 silly fetch manifest factstr-node-linux-x64-gnu@0.1.0
+24 silly packumentCache full:https://registry.npmjs.org/factstr-node-linux-x64-gnu cache-miss
+25 silly fetch manifest factstr-node-win32-x64-msvc@0.1.0
+26 silly packumentCache full:https://registry.npmjs.org/factstr-node-win32-x64-msvc cache-miss
+27 silly fetch manifest factstr-node-darwin-x64@0.1.0
+28 silly packumentCache full:https://registry.npmjs.org/factstr-node-darwin-x64 cache-miss
+29 silly fetch manifest factstr-node-linux-x64-gnu@0.1.0
+30 silly packumentCache full:https://registry.npmjs.org/factstr-node-linux-x64-gnu cache-miss
+31 silly fetch manifest factstr-node-win32-x64-msvc@0.1.0
+32 silly packumentCache full:https://registry.npmjs.org/factstr-node-win32-x64-msvc cache-miss
+33 silly placeDep node_modules/factstr-node factstr-node-darwin-x64@ OK for: factstr-node@0.1.0 want: 0.1.0
+34 silly placeDep node_modules/factstr-node factstr-node-linux-x64-gnu@ OK for: factstr-node@0.1.0 want: 0.1.0
+35 silly placeDep node_modules/factstr-node factstr-node-win32-x64-msvc@ OK for: factstr-node@0.1.0 want: 0.1.0
+36 silly reify mark retired [
+36 silly reify   '/Users/rico.fritzsche/code/factstore/factstr-node/smoke/node_modules/factstr-node'
+36 silly reify ]
+37 silly reify moves {
+37 silly reify   '/Users/rico.fritzsche/code/factstore/factstr-node/smoke/node_modules/factstr-node': '/Users/rico.fritzsche/code/factstore/factstr-node/smoke/node_modules/.factstr-node-q6sdb9pR'
+37 silly reify }
+38 silly audit report null
+39 http cache factstr-node-darwin-arm64@file:/Users/rico.fritzsche/code/factstore/factstr-node/npm/darwin-arm64/factstr-node-darwin-arm64-0.1.0.tgz 0ms (cache hit)
+40 http cache factstr-node@file:/Users/rico.fritzsche/code/factstore/factstr-node/factstr-node-0.1.0.tgz 0ms (cache hit)
+41 silly ADD node_modules/factstr-node-darwin-arm64
+42 silly CHANGE node_modules/factstr-node
+43 verbose cwd /Users/rico.fritzsche/code/factstore/factstr-node/smoke
+44 verbose os Darwin 24.6.0
+45 verbose node v25.7.0
+46 verbose npm  v11.10.1
+47 verbose exit 0
+48 info ok

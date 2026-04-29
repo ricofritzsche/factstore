@@ -1,0 +1,10 @@
+{
+  "name": "factstr-node-smoke",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "install:packed": "node ./install-packed.mjs",
+    "build": "tsc -p tsconfig.json",
+    "smoke": "node dist/index.js"
+  }
+}

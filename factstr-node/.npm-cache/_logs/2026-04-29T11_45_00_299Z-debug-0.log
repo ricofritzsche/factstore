@@ -1,0 +1,36 @@
+0 verbose cli /opt/homebrew/Cellar/node/25.7.0/bin/node /opt/homebrew/bin/npm
+1 info using npm@11.10.1
+2 info using node@v25.7.0
+3 silly config load:file:/opt/homebrew/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/rico.fritzsche/code/factstore/factstr-node/npm/darwin-arm64/.npmrc
+5 silly config load:file:/Users/rico.fritzsche/.npmrc
+6 silly config load:file:/opt/homebrew/etc/npmrc
+7 verbose title npm pack
+8 verbose argv "pack"
+9 verbose logfile logs-max:10 dir:/Users/rico.fritzsche/code/factstore/factstr-node/.npm-cache/_logs/2026-04-29T11_45_00_299Z-
+10 verbose logfile /Users/rico.fritzsche/code/factstore/factstr-node/.npm-cache/_logs/2026-04-29T11_45_00_299Z-debug-0.log
+11 silly logfile start cleaning logs, removing 1 files
+12 silly logfile done cleaning log files
+13 silly packumentCache heap:4496293888 maxSize:1124073472 maxEntrySize:562036736
+14 notice
+15 notice 📦  factstr-node-darwin-arm64@0.1.0
+16 notice Tarball Contents
+17 notice 98B README.md
+17 notice 799.5kB factstr-node.darwin-arm64.node
+17 notice 459B package.json
+18 notice Tarball Details
+19 notice name: factstr-node-darwin-arm64
+20 notice version: 0.1.0
+21 notice filename: factstr-node-darwin-arm64-0.1.0.tgz
+22 notice package size: 314.1 kB
+23 notice unpacked size: 800.1 kB
+24 notice shasum: 2d4cbbb58e19184956a7782ffef0fb8e2902e012
+25 notice integrity: sha512-8by+BrXBavJYo[...]iNWRjy8vP3FcA==
+26 notice total files: 3
+27 notice
+28 verbose cwd /Users/rico.fritzsche/code/factstore/factstr-node/npm/darwin-arm64
+29 verbose os Darwin 24.6.0
+30 verbose node v25.7.0
+31 verbose npm  v11.10.1
+32 verbose exit 0
+33 info ok
