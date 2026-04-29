@@ -1,5 +1,5 @@
 {
-  "name": "factstr-node-linux-x64-gnu",
+  "name": "@factstr/factstr-node-linux-x64-gnu",
   "version": "0.1.0",
   "description": "Linux x64 GNU prebuilt binary package for factstr-node.",
   "license": "MIT OR Apache-2.0",

@@ -1,4 +1,4 @@
-import { FactstrMemoryStore } from 'factstr-node';
+import { FactstrMemoryStore } from '@factstr/factstr-node';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {

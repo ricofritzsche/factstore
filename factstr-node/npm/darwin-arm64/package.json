@@ -1,5 +1,5 @@
 {
-  "name": "factstr-node-darwin-arm64",
+  "name": "@factstr/factstr-node-darwin-arm64",
   "version": "0.1.0",
   "description": "Darwin arm64 prebuilt binary package for factstr-node.",
   "license": "MIT OR Apache-2.0",

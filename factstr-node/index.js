@@ -5,19 +5,19 @@ const { join } = require('node:path');
 
 function currentPrebuiltPackageName() {
   if (process.platform === 'darwin' && process.arch === 'arm64') {
-    return 'factstr-node-darwin-arm64';
+    return '@factstr/factstr-node-darwin-arm64';
   }
 
   if (process.platform === 'darwin' && process.arch === 'x64') {
-    return 'factstr-node-darwin-x64';
+    return '@factstr/factstr-node-darwin-x64';
   }
 
   if (process.platform === 'linux' && process.arch === 'x64' && isLinuxGnu()) {
-    return 'factstr-node-linux-x64-gnu';
+    return '@factstr/factstr-node-linux-x64-gnu';
   }
 
   if (process.platform === 'win32' && process.arch === 'x64') {
-    return 'factstr-node-win32-x64-msvc';
+    return '@factstr/factstr-node-win32-x64-msvc';
   }
 
   return null;

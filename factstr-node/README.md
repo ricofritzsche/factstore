@@ -1,6 +1,6 @@
 # factstr-node
 
-`factstr-node` is the TypeScript and Node package surface for the current FACTSTR language adapter.
+`@factstr/factstr-node` is the TypeScript and Node package surface for the current FACTSTR language adapter.
 
 Current scope:
 
@@ -69,12 +69,31 @@ factstr-node TypeScript smoke test passed
 
 `factstr-node` is intended to ship prebuilt native binaries.
 
-- the public npm package is `factstr-node`
+- the public npm package is `@factstr/factstr-node`
 - platform packages carry the native `.node` binary for one OS and CPU combination
 - npm installs the matching platform package through `optionalDependencies`
 - `factstr-node` loads that platform package first and falls back to a locally built binary only for developer workflows in this repository
 
 Local Rust builds remain a developer fallback. They are not the primary consumer installation path.
+
+## Release Model
+
+`@factstr/factstr-node` is the publishable npm product in this repository.
+
+- publishing runs in GitHub Actions
+- npm trusted publishing is the intended steady-state path
+- the prebuilt support packages under `npm/*` exist only to carry platform-native `.node` artifacts
+- the Rust `factstr-node` crate and `factstr-interop` are workspace support crates, not crates.io products
+
+The Node adapter line stays version-locked across:
+
+- `factstr-node/package.json`
+- `factstr-node/Cargo.toml`
+- `factstr-node/npm/*/package.json`
+
+The repository CI checks that these versions stay in sync before release workflows run.
+
+Normal release flow does not publish from a developer machine.
 
 ## Supported Targets
 

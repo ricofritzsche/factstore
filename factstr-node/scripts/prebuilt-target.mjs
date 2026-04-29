@@ -3,7 +3,7 @@ import { join } from 'node:path';
 export const prebuiltTargets = [
   {
     rustTarget: 'aarch64-apple-darwin',
-    packageName: 'factstr-node-darwin-arm64',
+    packageName: '@factstr/factstr-node-darwin-arm64',
     packageDirectoryName: 'darwin-arm64',
     os: 'darwin',
     arch: 'arm64',
@@ -11,7 +11,7 @@ export const prebuiltTargets = [
   },
   {
     rustTarget: 'x86_64-apple-darwin',
-    packageName: 'factstr-node-darwin-x64',
+    packageName: '@factstr/factstr-node-darwin-x64',
     packageDirectoryName: 'darwin-x64',
     os: 'darwin',
     arch: 'x64',
@@ -19,7 +19,7 @@ export const prebuiltTargets = [
   },
   {
     rustTarget: 'x86_64-unknown-linux-gnu',
-    packageName: 'factstr-node-linux-x64-gnu',
+    packageName: '@factstr/factstr-node-linux-x64-gnu',
     packageDirectoryName: 'linux-x64-gnu',
     os: 'linux',
     arch: 'x64',
@@ -27,7 +27,7 @@ export const prebuiltTargets = [
   },
   {
     rustTarget: 'x86_64-pc-windows-msvc',
-    packageName: 'factstr-node-win32-x64-msvc',
+    packageName: '@factstr/factstr-node-win32-x64-msvc',
     packageDirectoryName: 'win32-x64-msvc',
     os: 'win32',
     arch: 'x64',
@@ -54,6 +54,10 @@ export function prebuiltTargetFromRustTarget(rustTarget) {
 
 export function prebuiltPackageDirectory(packageRoot, target) {
   return join(packageRoot, 'npm', target.packageDirectoryName);
+}
+
+export function npmPackFilename(packageName, version) {
+  return `${packageName.replace('@', '').replace('/', '-')}-${version}.tgz`;
 }
 
 function isLinuxGnu() {
