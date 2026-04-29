@@ -13,6 +13,16 @@ target
 .DS_Store
 **/.DS_Store
 
+# factstr-node local npm and package build artifacts
+factstr-node/.npm-cache/
+factstr-node/factstr-node-*.tgz
+factstr-node/factstr-node.*.node
+factstr-node/factstr-node.node
+factstr-node/npm/*/factstr-node-*.tgz
+factstr-node/npm/*/factstr-node.*.node
+factstr-node/smoke/dist/
+factstr-node/smoke/node_modules/
+
 # Local SQLite artifacts
 identifier.sqlite
 examples/bank-slices-cli/*.sqlite3
