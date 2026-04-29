@@ -354,6 +354,25 @@ Query-model runtime work should preserve these boundaries:
 - CQRS terminology should not drive the design
 - runtime strategy should not leak into the core store contract
 
+## Integration With Other Technologies
+
+FACTSTR remains a Rust-first event store.
+
+Integration with other technologies such as TypeScript, Python, and C# should not duplicate the store core in those runtimes. The semantic contract stays in Rust.
+
+Cross-language integration should happen through thin interop adapters that expose the Rust core without reimplementing its behavior. These adapters are not store implementations. They are access surfaces for other runtimes.
+
+This keeps the architectural categories explicit:
+
+* **store implementations** preserve the shared contract through Rust crates such as memory, SQLite, and PostgreSQL
+* **interop adapters** expose that contract to other runtimes such as Node/TypeScript, Python, and .NET
+
+The first interop surface should stay small and explicit. It should begin with operations such as append, query, append against expected context version, and durable cursor-based replay or catch-up.
+
+The preferred first shape is explicit durable access, not complex callback-heavy runtime integration. This keeps semantics stable across language boundaries and avoids coupling the contract to one host runtime's threading or callback model.
+
+Optional transport adapters may still come later, but they should remain a separate concern above the Rust core and should only be added after the core and native interop surface are stable.
+
 ## Delivery Plan
 
 ### Phase 1

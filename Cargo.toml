@@ -2,7 +2,9 @@
 members = [
     "factstr",
     "factstr-conformance",
+    "factstr-interop",
     "factstr-memory",
+    "factstr-node",
     "factstr-postgres",
     "factstr-sqlite",
 ]
