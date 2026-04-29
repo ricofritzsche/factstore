@@ -1,0 +1,67 @@
+name: release-rust
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-plz-release:
+    name: Release unpublished Rust crates
+    runs-on: ubuntu-24.04
+    if: ${{ github.repository_owner == 'ricofritzsche' }}
+    environment: release
+    permissions:
+      contents: write
+      pull-requests: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Enable crates.io bootstrap token when configured
+        if: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
+        run: echo "CARGO_REGISTRY_TOKEN=${{ secrets.CARGO_REGISTRY_TOKEN }}" >> "$GITHUB_ENV"
+
+      - name: Run release-plz release
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+          config: release-plz.toml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-plz-pr:
+    name: Create or update Rust release PR
+    runs-on: ubuntu-24.04
+    if: ${{ github.repository_owner == 'ricofritzsche' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz release-pr
+        uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+          config: release-plz.toml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

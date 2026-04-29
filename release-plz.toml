@@ -1,0 +1,42 @@
+[workspace]
+release = false
+changelog_update = false
+dependencies_update = true
+git_release_enable = true
+git_tag_enable = true
+publish_timeout = "10m"
+
+[[package]]
+name = "factstr"
+release = true
+publish = true
+
+[[package]]
+name = "factstr-memory"
+release = true
+publish = true
+
+[[package]]
+name = "factstr-sqlite"
+release = true
+publish = true
+
+[[package]]
+name = "factstr-postgres"
+release = true
+publish = true
+
+[[package]]
+name = "factstr-conformance"
+release = false
+publish = false
+
+[[package]]
+name = "factstr-interop"
+release = false
+publish = false
+
+[[package]]
+name = "factstr-node"
+release = false
+publish = false

@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo check
+        run: cargo check
+
+      - name: Cargo fmt check
+        run: cargo fmt --check
+
+      - name: Cargo clippy
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Cargo test
+        run: cargo test --workspace --exclude factstr-postgres
+
+  node-version-sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Check factstr-node version sync
+        run: node scripts/check-node-version-sync.mjs

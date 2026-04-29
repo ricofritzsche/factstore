@@ -4,6 +4,37 @@ FACTSTR is a Rust event store built around immutable facts, command-context cons
 
 It is meant to be easy to start with: append the first fact, read the relevant facts, check context safely, and keep feature-owned query models current from committed batches.
 
+## Repository Shape
+
+The repository is organized around explicit categories:
+
+- `factstr` defines the shared Rust contract
+- `factstr-memory`, `factstr-sqlite`, and `factstr-postgres` are store implementations that preserve that contract
+- `factstr-conformance` holds reusable semantic checks for store implementations
+- `factstr-interop` defines a backend-independent interop DTO boundary above the Rust core for later language adapters
+- `factstr-node` is the first language adapter and currently exposes a memory-backed TypeScript and Node package on top of `factstr-interop`
+
+`factstr-interop` is not a store implementation. It does not reimplement append, query, conditional append, streams, or durable streams. It keeps the first cross-language boundary explicit without making a language-specific adapter define the contract shape by accident.
+It is internal support for language adapters in this repository, not the user-facing package target for this step.
+
+`factstr-node` is not a store implementation. It is not a transport adapter. The current scope is intentionally narrow: a memory-backed TypeScript and Node package for append, query, and conditional append through the interop DTO boundary. The public package is intended to resolve prebuilt native binaries by platform, while `factstr-interop` stays internal support.
+
+## Release Model
+
+Rust releases are managed by `release-plz`.
+
+- publishable crates: `factstr`, `factstr-memory`, `factstr-sqlite`, `factstr-postgres`
+- non-products on crates.io: `factstr-interop`, the Rust `factstr-node` crate, and `factstr-conformance`
+
+The intended steady-state Rust path is GitHub Actions trusted publishing. Brand-new crates may still need a one-time bootstrap `CARGO_REGISTRY_TOKEN` in GitHub Actions for the first publish before trusted publishing takes over.
+
+The npm release lane publishes only `@factstr/factstr-node`.
+
+- `@factstr/factstr-node` is the public npm package
+- the prebuilt packages under `factstr-node/npm/*` exist only for native distribution support
+
+Node publishing is intended to run through GitHub Actions trusted publishing on GitHub-hosted runners, not from a developer laptop.
+
 ## Links
 
 - Website: https://factstr.com
@@ -65,6 +96,17 @@ The current public contract types are:
 - `EventStream`
 - `EventStore`
 - `EventStoreError`
+
+The current interop boundary types are:
+
+- `InteropNewEvent`
+- `InteropEventRecord`
+- `InteropEventFilter`
+- `InteropEventQuery`
+- `InteropQueryResult`
+- `InteropAppendResult`
+- `InteropConditionalAppendConflict`
+- `InteropError`
 
 ## Stores
 
@@ -258,78 +300,3 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres cargo test
 ## Using FACTSTR From Another Repository
 
 The current intended consumption path is a git dependency.
-
-Use the shared contract only:
-
-```toml
-[dependencies]
-factstr = { git = "https://github.com/ricofritzsche/factstr.git" }
-```
-
-Use the in-memory store:
-
-```toml
-[dependencies]
-factstr = { git = "https://github.com/ricofritzsche/factstr.git" }
-factstr-memory = { git = "https://github.com/ricofritzsche/factstr.git" }
-```
-
-Use the SQLite store:
-
-```toml
-[dependencies]
-factstr = { git = "https://github.com/ricofritzsche/factstr.git" }
-factstr-sqlite = { git = "https://github.com/ricofritzsche/factstr.git" }
-```
-
-Use the PostgreSQL store:
-
-```toml
-[dependencies]
-factstr = { git = "https://github.com/ricofritzsche/factstr.git" }
-factstr-postgres = { git = "https://github.com/ricofritzsche/factstr.git" }
-```
-
-## Workspace
-
-This repository currently contains:
-
-* `factstr`
-* `factstr-memory`
-* `factstr-sqlite`
-* `factstr-postgres`
-* `factstr-conformance`
-
-Crate roles:
-
-* `factstr`: shared runtime contract crate
-* `factstr-memory`: publishable in-memory runtime store
-* `factstr-sqlite`: publishable embedded SQLite runtime store
-* `factstr-postgres`: publishable PostgreSQL runtime store
-* `factstr-conformance`: internal reusable semantic test support
-
-## Current Scope Boundary
-
-Implemented now:
-
-* shared contract
-* memory store
-* sqlite store
-* postgres store
-* reusable store conformance tests
-* streams
-* durable streams in Memory, SQLite, and PostgreSQL
-
-Not implemented now:
-
-* file store
-* transport adapters
-* migrations framework
-* first-class query-model runtime above streams
-
-## License
-
-Licensed under either of:
-
-* MIT license ([LICENSE-MIT](LICENSE-MIT))
-* Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))

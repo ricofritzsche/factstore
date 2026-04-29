@@ -1,0 +1,186 @@
+name: publish-node
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  detect-node-release:
+    name: Detect factstr-node publish need
+    runs-on: ubuntu-24.04
+    if: ${{ github.repository_owner == 'ricofritzsche' }}
+    outputs:
+      local_version: ${{ steps.compare.outputs.local_version }}
+      registry_version: ${{ steps.compare.outputs.registry_version }}
+      should_publish: ${{ steps.compare.outputs.should_publish }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Check factstr-node version sync
+        run: node scripts/check-node-version-sync.mjs
+
+      - name: Compare local and registry versions
+        id: compare
+        run: |
+          remote_json="$(npm view '@factstr/factstr-node' version --json 2>/dev/null || echo 'null')"
+          export REMOTE_JSON="$remote_json"
+          node <<'EOF'
+          const fs = require('node:fs');
+          const localVersion = require('./factstr-node/package.json').version;
+          const remoteRaw = JSON.parse(process.env.REMOTE_JSON);
+          const registryVersion = Array.isArray(remoteRaw)
+            ? remoteRaw.at(-1)
+            : remoteRaw;
+          const shouldPublish = registryVersion !== localVersion;
+          const output = process.env.GITHUB_OUTPUT;
+          fs.appendFileSync(output, `local_version=${localVersion}\n`);
+          fs.appendFileSync(output, `registry_version=${registryVersion ?? 'none'}\n`);
+          fs.appendFileSync(output, `should_publish=${shouldPublish}\n`);
+          EOF
+
+  publish-node-prebuilt:
+    name: Publish factstr-node prebuilt package
+    needs: detect-node-release
+    if: ${{ needs.detect-node-release.outputs.should_publish == 'true' }}
+    runs-on: ${{ matrix.runner }}
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            rust-target: aarch64-apple-darwin
+            package-directory: darwin-arm64
+            package-name: "@factstr/factstr-node-darwin-arm64"
+          - runner: macos-13
+            rust-target: x86_64-apple-darwin
+            package-directory: darwin-x64
+            package-name: "@factstr/factstr-node-darwin-x64"
+          - runner: ubuntu-24.04
+            rust-target: x86_64-unknown-linux-gnu
+            package-directory: linux-x64-gnu
+            package-name: "@factstr/factstr-node-linux-x64-gnu"
+          - runner: windows-2022
+            rust-target: x86_64-pc-windows-msvc
+            package-directory: win32-x64-msvc
+            package-name: "@factstr/factstr-node-win32-x64-msvc"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Ensure npm trusted publishing client version
+        shell: bash
+        run: |
+          npm install -g npm@11
+          npm --version
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: Check factstr-node version sync
+        run: node scripts/check-node-version-sync.mjs
+
+      - name: Compare prebuilt package version with npm registry
+        id: compare
+        working-directory: factstr-node/npm/${{ matrix.package-directory }}
+        shell: bash
+        run: |
+          remote_json="$(npm view '${{ matrix.package-name }}' version --json 2>/dev/null || echo 'null')"
+          export REMOTE_JSON="$remote_json"
+          node <<'EOF'
+          const fs = require('node:fs');
+          const localVersion = require('./package.json').version;
+          const remoteRaw = JSON.parse(process.env.REMOTE_JSON);
+          const registryVersion = Array.isArray(remoteRaw)
+            ? remoteRaw.at(-1)
+            : remoteRaw;
+          const shouldPublish = registryVersion !== localVersion;
+          const output = process.env.GITHUB_OUTPUT;
+          fs.appendFileSync(output, `local_version=${localVersion}\n`);
+          fs.appendFileSync(output, `registry_version=${registryVersion ?? 'none'}\n`);
+          fs.appendFileSync(output, `should_publish=${shouldPublish}\n`);
+          EOF
+
+      - name: Build prebuilt package payload
+        if: ${{ steps.compare.outputs.should_publish == 'true' }}
+        working-directory: factstr-node
+        run: node ./scripts/build-prebuilt-package.mjs ${{ matrix.rust-target }}
+
+      - name: Publish prebuilt support package
+        if: ${{ steps.compare.outputs.should_publish == 'true' }}
+        working-directory: factstr-node/npm/${{ matrix.package-directory }}
+        run: npm publish --access public
+
+  publish-node-main:
+    name: Publish factstr-node npm package
+    needs:
+      - detect-node-release
+      - publish-node-prebuilt
+    if: ${{ needs.detect-node-release.outputs.should_publish == 'true' }}
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Ensure npm trusted publishing client version
+        shell: bash
+        run: |
+          npm install -g npm@11
+          npm --version
+
+      - name: Check factstr-node version sync
+        run: node scripts/check-node-version-sync.mjs
+
+      - name: Confirm main package still needs publish
+        id: compare
+        run: |
+          remote_json="$(npm view '@factstr/factstr-node' version --json 2>/dev/null || echo 'null')"
+          export REMOTE_JSON="$remote_json"
+          node <<'EOF'
+          const fs = require('node:fs');
+          const localVersion = require('./factstr-node/package.json').version;
+          const remoteRaw = JSON.parse(process.env.REMOTE_JSON);
+          const registryVersion = Array.isArray(remoteRaw)
+            ? remoteRaw.at(-1)
+            : remoteRaw;
+          const shouldPublish = registryVersion !== localVersion;
+          const output = process.env.GITHUB_OUTPUT;
+          fs.appendFileSync(output, `should_publish=${shouldPublish}\n`);
+          EOF
+
+      - name: Publish factstr-node
+        if: ${{ steps.compare.outputs.should_publish == 'true' }}
+        working-directory: factstr-node
+        run: npm publish --access public
