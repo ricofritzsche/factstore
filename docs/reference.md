@@ -116,3 +116,17 @@ Current shared store error type.
 - `BackendFailure`
 
 This stays intentionally small and focused on current shared behavior.
+
+## Node and TypeScript Boundary
+
+`@factstr/factstr-node` currently exposes a smaller package boundary than the full Rust contract.
+
+- current Node package surface:
+  - `FactstrMemoryStore`
+  - `append`
+  - `query`
+  - `appendIf`
+- current Node package is memory-backed only
+- current Node package does not yet expose SQLite, PostgreSQL, streams, durable streams, or transport behavior
+
+See [Node and TypeScript](node-typescript.md) for the current package examples.

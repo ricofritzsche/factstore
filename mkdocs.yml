@@ -9,6 +9,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Node and TypeScript: node-typescript.md
   - Examples: examples.md
   - Core Concepts: core-concepts.md
   - Streams: streams.md

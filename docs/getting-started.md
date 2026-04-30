@@ -1,6 +1,6 @@
 # Getting Started
 
-This page is the shortest path to running the current FACTSTR repository and understanding what is already implemented.
+This page is the shortest path to the current FACTSTR entry points and to what is already implemented.
 
 ## Prerequisites
 
@@ -14,7 +14,11 @@ git clone https://github.com/ricofritzsche/factstr.git
 cd factstr
 ```
 
-## Check The Workspace
+## Start With Rust
+
+If you want the Rust workspace entry path, start here.
+
+### Check The Workspace
 
 ```bash
 cargo check
@@ -22,7 +26,7 @@ cargo check
 
 This verifies the shared contract crate, the memory store, the SQLite store, the PostgreSQL store, and the conformance test crate all compile together.
 
-## Start With The Memory Store
+### Start With The Memory Store
 
 Run the in-memory store tests first:
 
@@ -66,7 +70,7 @@ That example shows:
 - a real `stream_to(...)` registration owned locally by `fetch_balance`
 - SQLite-backed facts with an interactive CLI
 
-## Run The PostgreSQL Store Tests
+### Run The PostgreSQL Store Tests
 
 Set `DATABASE_URL` to a PostgreSQL database where the configured user can create schemas, then run:
 
@@ -75,6 +79,27 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres cargo test -p 
 ```
 
 The PostgreSQL tests create a fresh schema per test run and exercise the same conformance behavior as the memory store.
+
+## Start With Node and TypeScript
+
+If you want the published package entry path instead, start with `@factstr/factstr-node`.
+
+Install it:
+
+```bash
+npm install @factstr/factstr-node
+```
+
+The current Node and TypeScript package surface is intentionally narrow:
+
+- `FactstrMemoryStore`
+- `append`
+- `query`
+- `appendIf`
+
+The published package is memory-backed only in the current step. It does not yet expose SQLite, PostgreSQL, streams, durable streams, or transport behavior.
+
+See [Node and TypeScript](node-typescript.md) for the current package examples and boundary.
 
 ## What You Should Understand After This Page
 
@@ -89,3 +114,4 @@ After these commands, you should know:
 - shared reusable durable-stream conformance exists in `factstr-conformance`
 - the current scope is still intentionally narrow and focused on core behavior
 - there are two direct runnable memory-store examples you can build on next
+- the published Node package is currently a separate memory-backed entry path with a smaller surface than the Rust workspace

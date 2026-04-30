@@ -2,6 +2,8 @@
 
 These examples are the shortest concrete code paths for the current FACTSTR API.
 
+## Rust Examples In This Repository
+
 ## Basic Memory Store
 
 Source:
@@ -70,3 +72,22 @@ What it proves:
 - the `fetch_movement_history` slice reads facts directly and stays separate from `fetch_balance`
 
 This is the production-like example for the current repository: persisted facts in SQLite, local write-side rule checks, and a real stream-driven read model without introducing a shared domain layer.
+
+## Node and TypeScript Package Examples
+
+The current Node and TypeScript examples live with the published package surface rather than as a separate repository example directory.
+
+Use:
+
+- [`docs/node-typescript.md`](node-typescript.md) for the current package examples
+- [`factstr-node/NPM.md`](https://github.com/ricofritzsche/factstr/blob/main/factstr-node/NPM.md) for the npm-facing package documentation source
+- [`factstr-node/smoke/index.ts`](https://github.com/ricofritzsche/factstr/blob/main/factstr-node/smoke/index.ts) for the small package smoke consumer used in packaging verification
+
+Current Node and TypeScript examples are intentionally narrow:
+
+- `FactstrMemoryStore`
+- `append`
+- `query`
+- `appendIf`
+
+They do not currently demonstrate SQLite, PostgreSQL, streams, durable streams, or transport behavior because the published package does not expose those features yet.
