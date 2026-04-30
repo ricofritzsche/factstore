@@ -1,6 +1,6 @@
 {
   "name": "@factstr/factstr-node",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "TypeScript and Node package for the FACTSTR memory-backed adapter.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -11,16 +11,18 @@
     "index.d.ts"
   ],
   "optionalDependencies": {
-    "@factstr/factstr-node-darwin-arm64": "0.1.1",
-    "@factstr/factstr-node-darwin-x64": "0.1.1",
-    "@factstr/factstr-node-linux-x64-gnu": "0.1.1",
-    "@factstr/factstr-node-win32-x64-msvc": "0.1.1"
+    "@factstr/factstr-node-darwin-arm64": "0.1.2",
+    "@factstr/factstr-node-darwin-x64": "0.1.2",
+    "@factstr/factstr-node-linux-x64-gnu": "0.1.2",
+    "@factstr/factstr-node-win32-x64-msvc": "0.1.2"
   },
   "scripts": {
-    "build": "node ./scripts/build-package.mjs",
+    "prepare:readme": "node ./scripts/prepare-readme.mjs",
+    "build": "npm run prepare:readme && node ./scripts/build-package.mjs",
     "build:prebuilt:current": "node ./scripts/build-prebuilt-package.mjs",
     "pack:local": "npm pack",
     "pack:prebuilt:current": "node ./scripts/pack-prebuilt-package.mjs",
+    "prepack": "npm run prepare:readme",
     "smoke:packed": "npm run build && npm run pack:local && npm run pack:prebuilt:current && npm --prefix smoke run install:packed && npm --prefix smoke run build && npm --prefix smoke run smoke"
   }
 }

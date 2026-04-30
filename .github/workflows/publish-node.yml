@@ -95,6 +95,7 @@ jobs:
             package-directory: darwin-arm64
             package-name: "@factstr/factstr-node-darwin-arm64"
           - runner: macos-13
+          - runner: macos-14
             rust-target: x86_64-apple-darwin
             package-directory: darwin-x64
             package-name: "@factstr/factstr-node-darwin-x64"
