@@ -1,7 +1,7 @@
 {
   "name": "@factstr/factstr-node",
   "version": "0.2.1",
-  "description": "TypeScript and Node package for the FACTSTR memory-backed adapter.",
+  "description": "TypeScript and Node language adapter for FACTSTR memory and SQLite stores.",
   "main": "index.js",
   "types": "index.d.ts",
   "license": "MIT OR Apache-2.0",

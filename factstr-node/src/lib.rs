@@ -1,10 +1,18 @@
 mod append_if_outcome;
+mod durable_stream;
+mod event_stream_subscription;
 mod factstr_memory_store;
+mod factstr_sqlite_store;
 mod node_request;
 mod node_result;
 mod sequence_number_value;
+mod stream_callback;
+mod stream_error;
 
 pub use append_if_outcome::AppendIfResult;
+pub use durable_stream::DurableStream;
+pub use event_stream_subscription::EventStreamSubscription;
 pub use factstr_memory_store::FactstrMemoryStore;
+pub use factstr_sqlite_store::FactstrSqliteStore;
 pub use node_request::{EventFilter, EventQuery, NewEvent};
 pub use node_result::{AppendResult, ConditionalAppendConflict, EventRecord, QueryResult};

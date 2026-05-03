@@ -1,27 +1,32 @@
 # @factstr/factstr-node
 
-`@factstr/factstr-node` is the Node and TypeScript package for FACTSTR.
+`@factstr/factstr-node` is the Node and TypeScript language adapter for FACTSTR.
 
-It currently provides a memory-backed FACTSTR store for Node and TypeScript with a small, explicit API:
+It currently exposes two FACTSTR store adapters for Node and TypeScript with a small, explicit API:
 
 - `FactstrMemoryStore`
+- `FactstrSqliteStore`
 - `append`
 - `query`
 - `appendIf`
+- `streamAll`
+- `streamTo`
+- `streamAllDurable`
+- `streamToDurable`
 
 ## Current Scope
 
 Current scope is intentionally narrow:
 
-- memory-backed only
-- explicit append, query, and conditional-append behavior
+- memory-backed and SQLite-backed store access
+- explicit append, query, conditional-append, live-stream, and durable-stream behavior
+- non-durable live streams for future committed batches
+- durable streams that replay after the stored cursor and then continue with future committed delivery
 - TypeScript-friendly package surface
 
 Not included yet:
 
-- SQLite or PostgreSQL support
-- streams
-- durable streams
+- PostgreSQL support
 - transport behavior
 
 ## Install
@@ -29,6 +34,8 @@ Not included yet:
 ```bash
 npm install @factstr/factstr-node
 ```
+
+SQLite support is included in the same package. `FactstrMemoryStore` is memory-backed, while `FactstrSqliteStore` is SQLite-backed and persistent.
 
 ## Supported Platforms
 
@@ -43,19 +50,23 @@ Current prebuilt targets:
 
 ```ts
 import {
+  type DurableStream,
   type EventQuery,
   type NewEvent,
   FactstrMemoryStore,
+  FactstrSqliteStore,
 } from '@factstr/factstr-node';
 
-const store = new FactstrMemoryStore();
+const memoryStore = new FactstrMemoryStore();
+const sqliteStore = new FactstrSqliteStore('./factstr.sqlite');
 
 const event: NewEvent = {
   event_type: 'item-added',
   payload: { sku: 'ABC-123', quantity: 1 },
 };
 
-store.append([event]);
+memoryStore.append([event]);
+sqliteStore.append([event]);
 
 const query: EventQuery = {
   filters: [
@@ -65,10 +76,81 @@ const query: EventQuery = {
   ],
 };
 
-const result = store.query(query);
+const result = sqliteStore.query(query);
 
 console.log(result.event_records[0]?.occurred_at);
 console.log(result.event_records[0]?.payload);
+```
+
+## Live Streams
+
+`streamAll` and `streamTo` observe only future committed batches after registration becomes active.
+
+Callbacks receive one committed batch as an array of `EventRecord` values.
+
+`streamTo` applies the same query matching semantics as `query` and delivers only the matching facts from each future committed batch.
+
+`unsubscribe()` stops future deliveries for that stream.
+
+```ts
+import {
+  type EventQuery,
+  FactstrMemoryStore,
+} from '@factstr/factstr-node';
+
+const store = new FactstrMemoryStore();
+
+const streamAllSubscription = store.streamAll((events) => {
+  console.log('committed batch', events);
+});
+
+const filteredQuery: EventQuery = {
+  filters: [
+    {
+      event_types: ['item-added'],
+    },
+  ],
+};
+
+const streamToSubscription = store.streamTo(filteredQuery, (events) => {
+  console.log('filtered committed batch', events);
+});
+
+streamAllSubscription.unsubscribe();
+streamToSubscription.unsubscribe();
+```
+
+## Durable Streams
+
+`streamAllDurable` and `streamToDurable` replay facts strictly after the stored durable cursor and then continue with future committed delivery.
+
+Callbacks receive one committed batch as an array of `EventRecord` values.
+
+`FactstrMemoryStore` keeps durable stream state only for the lifetime of the current memory store instance.
+
+`FactstrSqliteStore` persists durable stream state in SQLite, so the same durable stream name can resume across reopening the same database path.
+
+```ts
+import {
+  type DurableStream,
+  FactstrSqliteStore,
+} from '@factstr/factstr-node';
+
+const store = new FactstrSqliteStore('./factstr.sqlite');
+const durableStream: DurableStream = { name: 'inventory-projector' };
+
+const subscription = store.streamAllDurable(durableStream, (events) => {
+  console.log('durable committed batch', events);
+});
+
+store.append([
+  {
+    event_type: 'item-added',
+    payload: { sku: 'ABC-123', quantity: 1 },
+  },
+]);
+
+subscription.unsubscribe();
 ```
 
 ## Conditional Append
@@ -80,10 +162,10 @@ import {
   type AppendIfResult,
   type EventQuery,
   type NewEvent,
-  FactstrMemoryStore,
+  FactstrSqliteStore,
 } from '@factstr/factstr-node';
 
-const store = new FactstrMemoryStore();
+const store = new FactstrSqliteStore('./factstr.sqlite');
 
 const contextQuery: EventQuery = {
   filters: [
@@ -118,6 +200,22 @@ if (outcome.conflict) {
 Sequence and context values are exposed as `bigint` so FACTSTR's Rust `u64` meanings stay lossless in TypeScript.
 
 `occurred_at` is exposed as an RFC 3339 string on each returned `EventRecord`.
+
+## Adapter Boundaries
+
+`FactstrMemoryStore` is memory-backed and process-local.
+
+`FactstrSqliteStore` is SQLite-backed and persistent at the database path you pass to the constructor.
+
+Both Node store adapters expose `append`, `query`, `appendIf`, `streamAll`, `streamTo`, `streamAllDurable`, and `streamToDurable`.
+
+Live streams are future-only.
+
+Durable streams replay after the stored cursor and then continue with future delivery.
+
+PostgreSQL is still not exposed in the Node adapter yet.
+
+Transport behavior is still not exposed in the Node adapter yet.
 
 ## Docs and Source
 
