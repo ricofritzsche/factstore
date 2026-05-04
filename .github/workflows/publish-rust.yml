@@ -36,35 +36,9 @@ jobs:
         id: plan
         run: node scripts/check-rust-publish-plan.mjs
 
-  validate-rust-packages:
-    name: Validate Rust crate packages
-    needs: detect-rust-release
-    if: ${{ github.repository_owner == 'ricofritzsche' && needs.detect-rust-release.outputs.should_publish_any == 'true' }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Package factstr
-        run: cargo package -p factstr
-
-      - name: Package factstr-memory
-        run: cargo package -p factstr-memory
-
-      - name: Package factstr-sqlite
-        run: cargo package -p factstr-sqlite
-
-      - name: Package factstr-postgres
-        run: cargo package -p factstr-postgres
-
   publish-rust:
     name: Publish Rust crates
-    needs:
-      - detect-rust-release
-      - validate-rust-packages
+    needs: detect-rust-release
     if: ${{ github.repository_owner == 'ricofritzsche' && needs.detect-rust-release.outputs.should_publish_any == 'true' }}
     runs-on: ubuntu-24.04
     environment: release
@@ -74,6 +48,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -98,11 +77,23 @@ jobs:
         if: ${{ steps.bootstrap.outputs.has_token != 'true' }}
         uses: rust-lang/crates-io-auth-action@v1
 
+      - name: Package factstr
+        if: ${{ needs.detect-rust-release.outputs.factstr_should_publish == 'true' }}
+        run: cargo package -p factstr
+
       - name: Publish factstr
         if: ${{ needs.detect-rust-release.outputs.factstr_should_publish == 'true' }}
         run: cargo publish -p factstr --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.bootstrap.outputs.has_token == 'true' && secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+
+      - name: Wait for factstr on crates.io before store crate packaging
+        if: ${{ needs.detect-rust-release.outputs.factstr_should_publish == 'true' && (needs.detect-rust-release.outputs.factstr_memory_should_publish == 'true' || needs.detect-rust-release.outputs.factstr_sqlite_should_publish == 'true' || needs.detect-rust-release.outputs.factstr_postgres_should_publish == 'true') }}
+        run: node scripts/wait-for-crates-io-version.mjs factstr ${{ needs.detect-rust-release.outputs.factstr_version }}
+
+      - name: Package factstr-memory
+        if: ${{ needs.detect-rust-release.outputs.factstr_memory_should_publish == 'true' }}
+        run: cargo package -p factstr-memory
 
       - name: Publish factstr-memory
         if: ${{ needs.detect-rust-release.outputs.factstr_memory_should_publish == 'true' }}
@@ -110,11 +101,19 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.bootstrap.outputs.has_token == 'true' && secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
 
+      - name: Package factstr-sqlite
+        if: ${{ needs.detect-rust-release.outputs.factstr_sqlite_should_publish == 'true' }}
+        run: cargo package -p factstr-sqlite
+
       - name: Publish factstr-sqlite
         if: ${{ needs.detect-rust-release.outputs.factstr_sqlite_should_publish == 'true' }}
         run: cargo publish -p factstr-sqlite --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.bootstrap.outputs.has_token == 'true' && secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+
+      - name: Package factstr-postgres
+        if: ${{ needs.detect-rust-release.outputs.factstr_postgres_should_publish == 'true' }}
+        run: cargo package -p factstr-postgres
 
       - name: Publish factstr-postgres
         if: ${{ needs.detect-rust-release.outputs.factstr_postgres_should_publish == 'true' }}
