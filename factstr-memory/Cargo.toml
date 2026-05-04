@@ -3,12 +3,12 @@ name = "factstr-memory"
 version = "0.3.1"
 edition = "2024"
 rust-version = "1.85"
-description = "In-memory factstr implementation that preserves the shared append, query, and conditional-append contract."
+description = "In-memory FACTSTR store for tests, examples, and local development."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ricofritzsche/factstr.git"
 homepage = "https://factstr.com"
 readme = "../README.md"
-keywords = ["eventstore", "eventsourcing", "memory", "facts", "testing"]
+keywords = ["eventstore", "eventsourcing", "facts", "memory", "testing"]
 categories = ["database-implementations"]
 
 [lib]
