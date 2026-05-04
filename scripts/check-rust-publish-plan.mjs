@@ -13,6 +13,7 @@ const crates = [
 
 const plan = {
   should_publish_any: false,
+  should_auth_with_trusted_publishing_any: false,
   crates: [],
 };
 
@@ -20,24 +21,37 @@ for (const crate of crates) {
   const manifestPath = join(workspaceRoot, crate.manifest);
   const version = readCargoTomlVersion(manifestPath);
   const publishedVersions = await readPublishedVersions(crate.name);
+  const hasPublishedRelease = publishedVersions.length > 0;
   const shouldPublish = !publishedVersions.includes(version);
 
   plan.crates.push({
     name: crate.name,
     manifest: crate.manifest,
     version,
+    has_published_release: hasPublishedRelease,
     should_publish: shouldPublish,
   });
 }
 
 plan.should_publish_any = plan.crates.some((crate) => crate.should_publish);
+plan.should_auth_with_trusted_publishing_any = plan.crates.some(
+  (crate) => crate.should_publish && crate.has_published_release,
+);
 
 if (process.env.GITHUB_OUTPUT) {
   appendFileSync(process.env.GITHUB_OUTPUT, `should_publish_any=${plan.should_publish_any}\n`);
+  appendFileSync(
+    process.env.GITHUB_OUTPUT,
+    `should_auth_with_trusted_publishing_any=${plan.should_auth_with_trusted_publishing_any}\n`,
+  );
 
   for (const crate of plan.crates) {
     const outputKey = crates.find((entry) => entry.name === crate.name)?.outputKey;
     appendFileSync(process.env.GITHUB_OUTPUT, `${outputKey}_version=${crate.version}\n`);
+    appendFileSync(
+      process.env.GITHUB_OUTPUT,
+      `${outputKey}_has_published_release=${crate.has_published_release}\n`,
+    );
     appendFileSync(
       process.env.GITHUB_OUTPUT,
       `${outputKey}_should_publish=${crate.should_publish}\n`,
