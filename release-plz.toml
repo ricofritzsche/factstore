@@ -13,18 +13,18 @@ publish = true
 
 [[package]]
 name = "factstr-memory"
-release = true
-publish = true
+release = false
+publish = false
 
 [[package]]
 name = "factstr-sqlite"
-release = true
-publish = true
+release = false
+publish = false
 
 [[package]]
 name = "factstr-postgres"
-release = true
-publish = true
+release = false
+publish = false
 
 [[package]]
 name = "factstr-conformance"
