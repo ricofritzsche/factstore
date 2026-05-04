@@ -1,6 +1,6 @@
 [package]
 name = "factstr-postgres"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
 description = "PostgreSQL factstr implementation using SQLx and the shared factstr runtime contract."
@@ -15,7 +15,7 @@ categories = ["database-implementations"]
 path = "src/lib.rs"
 
 [dependencies]
-factstr = { version = "0.2.1", path = "../factstr" }
+factstr = { version = "0.3.0", path = "../factstr" }
 serde_json = "1"
 sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-rustls", "json", "time"] }
 time = "0.3"

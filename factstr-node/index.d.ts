@@ -42,6 +42,14 @@ export interface AppendIfResult {
   conflict?: ConditionalAppendConflict | null;
 }
 
+export interface DurableStream {
+  name: string;
+}
+
+export declare class EventStreamSubscription {
+  unsubscribe(): void;
+}
+
 export declare class FactstrMemoryStore {
   constructor();
   append(events: NewEvent[]): AppendResult;
@@ -51,4 +59,43 @@ export declare class FactstrMemoryStore {
     query: EventQuery,
     expectedContextVersion?: bigint | null,
   ): AppendIfResult;
+  streamAll(handle: (events: EventRecord[]) => void): EventStreamSubscription;
+  streamTo(
+    query: EventQuery,
+    handle: (events: EventRecord[]) => void,
+  ): EventStreamSubscription;
+  streamAllDurable(
+    durableStream: DurableStream,
+    handle: (events: EventRecord[]) => void,
+  ): EventStreamSubscription;
+  streamToDurable(
+    durableStream: DurableStream,
+    query: EventQuery,
+    handle: (events: EventRecord[]) => void,
+  ): EventStreamSubscription;
+}
+
+export declare class FactstrSqliteStore {
+  constructor(databasePath: string);
+  append(events: NewEvent[]): AppendResult;
+  query(query: EventQuery): QueryResult;
+  appendIf(
+    events: NewEvent[],
+    query: EventQuery,
+    expectedContextVersion?: bigint | null,
+  ): AppendIfResult;
+  streamAll(handle: (events: EventRecord[]) => void): EventStreamSubscription;
+  streamTo(
+    query: EventQuery,
+    handle: (events: EventRecord[]) => void,
+  ): EventStreamSubscription;
+  streamAllDurable(
+    durableStream: DurableStream,
+    handle: (events: EventRecord[]) => void,
+  ): EventStreamSubscription;
+  streamToDurable(
+    durableStream: DurableStream,
+    query: EventQuery,
+    handle: (events: EventRecord[]) => void,
+  ): EventStreamSubscription;
 }

@@ -5,30 +5,28 @@ use crate::{
     stream_error::napi_error_from_event_store_error,
 };
 use factstr::{EventStore, EventStoreError};
-use factstr_memory::MemoryStore;
+use factstr_sqlite::SqliteStore;
 use napi::bindgen_prelude::BigInt;
 use napi::bindgen_prelude::Result;
 use napi::{Env, JsFunction};
 use napi_derive::napi;
 
 #[napi]
-pub struct FactstrMemoryStore {
-    memory_store: MemoryStore,
-}
-
-impl Default for FactstrMemoryStore {
-    fn default() -> Self {
-        Self::new()
-    }
+pub struct FactstrSqliteStore {
+    sqlite_store: SqliteStore,
 }
 
 #[napi]
-impl FactstrMemoryStore {
+impl FactstrSqliteStore {
     #[napi(constructor)]
-    pub fn new() -> Self {
-        Self {
-            memory_store: MemoryStore::new(),
-        }
+    pub fn new(database_path: String) -> Result<Self> {
+        let sqlite_store = SqliteStore::open(&database_path).map_err(|error| {
+            napi_error_from_event_store_error(EventStoreError::BackendFailure {
+                message: error.to_string(),
+            })
+        })?;
+
+        Ok(Self { sqlite_store })
     }
 
     #[napi]
@@ -42,7 +40,7 @@ impl FactstrMemoryStore {
             .map(Into::into)
             .collect::<Vec<_>>();
         let append_result = self
-            .memory_store
+            .sqlite_store
             .append(new_events)
             .map_err(napi_error_from_event_store_error)?;
 
@@ -54,7 +52,7 @@ impl FactstrMemoryStore {
         let interop_query = query.into_interop()?;
         let event_query = interop_query.into();
         let query_result = self
-            .memory_store
+            .sqlite_store
             .query(&event_query)
             .map_err(napi_error_from_event_store_error)?;
 
@@ -81,7 +79,7 @@ impl FactstrMemoryStore {
         let expected_context_version = option_bigint_to_u64(expected_context_version)?;
 
         match self
-            .memory_store
+            .sqlite_store
             .append_if(new_events, &event_query, expected_context_version)
         {
             Ok(append_result) => Ok(AppendIfResult {
@@ -107,7 +105,7 @@ impl FactstrMemoryStore {
     pub fn stream_all(&self, env: Env, handle: JsFunction) -> Result<EventStreamSubscription> {
         let stream_handle = handle_stream_from_js_function(env, handle)?;
         let event_stream = self
-            .memory_store
+            .sqlite_store
             .stream_all(stream_handle)
             .map_err(napi_error_from_event_store_error)?;
 
@@ -125,7 +123,7 @@ impl FactstrMemoryStore {
         let interop_query = query.into_interop()?;
         let event_query = interop_query.into();
         let event_stream = self
-            .memory_store
+            .sqlite_store
             .stream_to(&event_query, stream_handle)
             .map_err(napi_error_from_event_store_error)?;
 
@@ -142,7 +140,7 @@ impl FactstrMemoryStore {
         let stream_handle = handle_stream_from_js_function(env, handle)?;
         let factstr_durable_stream = durable_stream.into_factstr();
         let event_stream = self
-            .memory_store
+            .sqlite_store
             .stream_all_durable(&factstr_durable_stream, stream_handle)
             .map_err(napi_error_from_event_store_error)?;
 
@@ -162,7 +160,7 @@ impl FactstrMemoryStore {
         let interop_query = query.into_interop()?;
         let event_query = interop_query.into();
         let event_stream = self
-            .memory_store
+            .sqlite_store
             .stream_to_durable(&factstr_durable_stream, &event_query, stream_handle)
             .map_err(napi_error_from_event_store_error)?;
 

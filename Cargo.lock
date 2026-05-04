@@ -261,7 +261,7 @@ dependencies = [
 
 [[package]]
 name = "factstr"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "serde_json",
  "time",
@@ -269,7 +269,7 @@ dependencies = [
 
 [[package]]
 name = "factstr-conformance"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "factstr",
  "serde_json",
@@ -277,7 +277,7 @@ dependencies = [
 
 [[package]]
 name = "factstr-interop"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "factstr",
  "serde",
@@ -287,7 +287,7 @@ dependencies = [
 
 [[package]]
 name = "factstr-memory"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "factstr",
  "factstr-conformance",
@@ -297,11 +297,12 @@ dependencies = [
 
 [[package]]
 name = "factstr-node"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "factstr",
  "factstr-interop",
  "factstr-memory",
+ "factstr-sqlite",
  "napi",
  "napi-build",
  "napi-derive",
@@ -310,7 +311,7 @@ dependencies = [
 
 [[package]]
 name = "factstr-postgres"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "factstr",
  "factstr-conformance",
@@ -323,7 +324,7 @@ dependencies = [
 
 [[package]]
 name = "factstr-sqlite"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "factstr",
  "factstr-conformance",

@@ -63,10 +63,10 @@ function isMissingPackageError(error, packageName) {
 }
 
 const prebuiltPackage = loadPrebuiltPackage();
-let exportedModule = null;
+let nativeModule = null;
 
 if (prebuiltPackage !== null) {
-  exportedModule = prebuiltPackage;
+  nativeModule = prebuiltPackage;
 } else {
   const packageRoot = __dirname;
   const platformBinary = join(
@@ -76,9 +76,9 @@ if (prebuiltPackage !== null) {
   const fallbackBinary = join(packageRoot, 'factstr-node.node');
 
   if (existsSync(platformBinary)) {
-    exportedModule = require(platformBinary);
+    nativeModule = require(platformBinary);
   } else if (existsSync(fallbackBinary)) {
-    exportedModule = require(fallbackBinary);
+    nativeModule = require(fallbackBinary);
   } else {
     const packageName = currentPrebuiltPackageName();
     if (packageName !== null) {
@@ -93,4 +93,104 @@ if (prebuiltPackage !== null) {
   }
 }
 
-module.exports = exportedModule;
+function wrapStreamHandle(handle) {
+  if (typeof handle !== 'function') {
+    throw new TypeError('stream callback must be a function');
+  }
+
+  return (events) => {
+    try {
+      handle(events);
+      return true;
+    } catch (error) {
+      console.error('factstr-node stream callback failed', error);
+      return false;
+    }
+  };
+}
+
+class FactstrMemoryStore {
+  #nativeStore;
+
+  constructor() {
+    this.#nativeStore = new nativeModule.FactstrMemoryStore();
+  }
+
+  append(events) {
+    return this.#nativeStore.append(events);
+  }
+
+  query(query) {
+    return this.#nativeStore.query(query);
+  }
+
+  appendIf(events, query, expectedContextVersion) {
+    return this.#nativeStore.appendIf(events, query, expectedContextVersion);
+  }
+
+  streamAll(handle) {
+    return this.#nativeStore.streamAll(wrapStreamHandle(handle));
+  }
+
+  streamTo(query, handle) {
+    return this.#nativeStore.streamTo(query, wrapStreamHandle(handle));
+  }
+
+  streamAllDurable(durableStream, handle) {
+    return this.#nativeStore.streamAllDurable(durableStream, wrapStreamHandle(handle));
+  }
+
+  streamToDurable(durableStream, query, handle) {
+    return this.#nativeStore.streamToDurable(
+      durableStream,
+      query,
+      wrapStreamHandle(handle),
+    );
+  }
+}
+
+class FactstrSqliteStore {
+  #nativeStore;
+
+  constructor(databasePath) {
+    this.#nativeStore = new nativeModule.FactstrSqliteStore(databasePath);
+  }
+
+  append(events) {
+    return this.#nativeStore.append(events);
+  }
+
+  query(query) {
+    return this.#nativeStore.query(query);
+  }
+
+  appendIf(events, query, expectedContextVersion) {
+    return this.#nativeStore.appendIf(events, query, expectedContextVersion);
+  }
+
+  streamAll(handle) {
+    return this.#nativeStore.streamAll(wrapStreamHandle(handle));
+  }
+
+  streamTo(query, handle) {
+    return this.#nativeStore.streamTo(query, wrapStreamHandle(handle));
+  }
+
+  streamAllDurable(durableStream, handle) {
+    return this.#nativeStore.streamAllDurable(durableStream, wrapStreamHandle(handle));
+  }
+
+  streamToDurable(durableStream, query, handle) {
+    return this.#nativeStore.streamToDurable(
+      durableStream,
+      query,
+      wrapStreamHandle(handle),
+    );
+  }
+}
+
+module.exports = {
+  ...nativeModule,
+  FactstrMemoryStore,
+  FactstrSqliteStore,
+};
