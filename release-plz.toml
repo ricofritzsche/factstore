@@ -8,8 +8,8 @@ publish_timeout = "10m"
 
 [[package]]
 name = "factstr"
-release = true
-publish = true
+release = false
+publish = false
 
 [[package]]
 name = "factstr-memory"

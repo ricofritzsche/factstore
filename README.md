@@ -21,13 +21,13 @@ It is internal support for language adapters in this repository, not the user-fa
 
 ## Release Model
 
-Rust releases are managed by `release-plz`.
+Rust crates are published by `.github/workflows/publish-rust.yml`.
 
 - publishable crate today: `factstr`
 - versioned but intentionally held back from crates.io publishing for now: `factstr-memory`, `factstr-sqlite`, `factstr-postgres`
 - non-products on crates.io: `factstr-interop`, the Rust `factstr-node` crate, and `factstr-conformance`
 
-The intended steady-state Rust path is GitHub Actions trusted publishing. Brand-new crates may still need a one-time bootstrap `CARGO_REGISTRY_TOKEN` in GitHub Actions for the first publish before trusted publishing takes over.
+Rust publishing is version-driven: a crate is published only when its local version is not already present on crates.io. Brand-new crate publishes may still need a one-time `CARGO_REGISTRY_TOKEN` bootstrap in the `release` environment before crates.io trusted publishing takes over. Internal crates are never published.
 
 The npm release lane publishes the public Node.js binding package and its platform-specific native distribution support packages.
 

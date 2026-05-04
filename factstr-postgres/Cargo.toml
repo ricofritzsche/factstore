@@ -7,7 +7,7 @@ description = "PostgreSQL store for FACTSTR with append, query, streams, and dur
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ricofritzsche/factstr.git"
 homepage = "https://factstr.com"
-readme = "../README.md"
+readme = "README.md"
 keywords = ["eventstore", "eventsourcing", "facts", "postgres", "sqlx"]
 categories = ["database-implementations"]
 

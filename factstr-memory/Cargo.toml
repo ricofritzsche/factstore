@@ -7,7 +7,7 @@ description = "In-memory FACTSTR store for tests, examples, and local developmen
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ricofritzsche/factstr.git"
 homepage = "https://factstr.com"
-readme = "../README.md"
+readme = "README.md"
 keywords = ["eventstore", "eventsourcing", "facts", "memory", "testing"]
 categories = ["database-implementations"]
 
