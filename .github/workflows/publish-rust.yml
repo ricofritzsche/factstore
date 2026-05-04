@@ -79,14 +79,14 @@ jobs:
 
       - name: Authenticate with crates.io trusted publishing
         id: auth
-        if: ${{ needs.detect-rust-release.outputs.should_auth_with_trusted_publishing_any == 'true' }}
+        if: ${{ needs.detect-rust-release.outputs.factstr_should_publish == 'true' }}
         uses: rust-lang/crates-io-auth-action@v1
 
-      - name: Require bootstrap token for first crate publishes
-        if: ${{ steps.bootstrap.outputs.has_token != 'true' && ((needs.detect-rust-release.outputs.factstr_should_publish == 'true' && needs.detect-rust-release.outputs.factstr_has_published_release != 'true') || (needs.detect-rust-release.outputs.factstr_memory_should_publish == 'true' && needs.detect-rust-release.outputs.factstr_memory_has_published_release != 'true') || (needs.detect-rust-release.outputs.factstr_sqlite_should_publish == 'true' && needs.detect-rust-release.outputs.factstr_sqlite_has_published_release != 'true') || (needs.detect-rust-release.outputs.factstr_postgres_should_publish == 'true' && needs.detect-rust-release.outputs.factstr_postgres_has_published_release != 'true')) }}
+      - name: Require bootstrap token for store crate publishes
+        if: ${{ steps.bootstrap.outputs.has_token != 'true' && (needs.detect-rust-release.outputs.factstr_memory_should_publish == 'true' || needs.detect-rust-release.outputs.factstr_sqlite_should_publish == 'true' || needs.detect-rust-release.outputs.factstr_postgres_should_publish == 'true') }}
         run: |
-          echo "A first publish is required for at least one Rust crate, but CARGO_REGISTRY_TOKEN is not configured in the release environment." >&2
-          echo "Trusted publishing only works after the crate has already been published and configured on crates.io." >&2
+          echo "One or more Rust store crates need publishing, but CARGO_REGISTRY_TOKEN is not configured in the release environment." >&2
+          echo "The current Rust publish lane uses trusted publishing for factstr and the bootstrap token path for store crates until their trusted publishing configuration is enabled on crates.io." >&2
           exit 1
 
       - name: Package factstr
@@ -97,7 +97,7 @@ jobs:
         if: ${{ needs.detect-rust-release.outputs.factstr_should_publish == 'true' }}
         run: cargo publish -p factstr --locked
         env:
-          CARGO_REGISTRY_TOKEN: ${{ needs.detect-rust-release.outputs.factstr_has_published_release == 'true' && steps.auth.outputs.token || secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
       - name: Wait for factstr on crates.io before store crate packaging
         if: ${{ needs.detect-rust-release.outputs.factstr_should_publish == 'true' && (needs.detect-rust-release.outputs.factstr_memory_should_publish == 'true' || needs.detect-rust-release.outputs.factstr_sqlite_should_publish == 'true' || needs.detect-rust-release.outputs.factstr_postgres_should_publish == 'true') }}
@@ -111,7 +111,7 @@ jobs:
         if: ${{ needs.detect-rust-release.outputs.factstr_memory_should_publish == 'true' }}
         run: cargo publish -p factstr-memory --locked
         env:
-          CARGO_REGISTRY_TOKEN: ${{ needs.detect-rust-release.outputs.factstr_memory_has_published_release == 'true' && steps.auth.outputs.token || secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Package factstr-sqlite
         if: ${{ needs.detect-rust-release.outputs.factstr_sqlite_should_publish == 'true' }}
@@ -121,7 +121,7 @@ jobs:
         if: ${{ needs.detect-rust-release.outputs.factstr_sqlite_should_publish == 'true' }}
         run: cargo publish -p factstr-sqlite --locked
         env:
-          CARGO_REGISTRY_TOKEN: ${{ needs.detect-rust-release.outputs.factstr_sqlite_has_published_release == 'true' && steps.auth.outputs.token || secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Package factstr-postgres
         if: ${{ needs.detect-rust-release.outputs.factstr_postgres_should_publish == 'true' }}
@@ -131,4 +131,4 @@ jobs:
         if: ${{ needs.detect-rust-release.outputs.factstr_postgres_should_publish == 'true' }}
         run: cargo publish -p factstr-postgres --locked
         env:
-          CARGO_REGISTRY_TOKEN: ${{ needs.detect-rust-release.outputs.factstr_postgres_has_published_release == 'true' && steps.auth.outputs.token || secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
