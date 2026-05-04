@@ -1,6 +1,6 @@
 [package]
 name = "factstr-memory"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 rust-version = "1.85"
 description = "In-memory FACTSTR store for tests, examples, and local development."
@@ -15,7 +15,7 @@ categories = ["database-implementations"]
 path = "src/lib.rs"
 
 [dependencies]
-factstr = { version = "0.3.1", path = "../factstr" }
+factstr = { version = "0.3.2", path = "../factstr" }
 serde_json = "1"
 time = { version = "0.3", features = ["formatting"] }
 
