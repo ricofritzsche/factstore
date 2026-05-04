@@ -1,0 +1,123 @@
+name: publish-rust
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  detect-rust-release:
+    name: Detect Rust crate publish need
+    runs-on: ubuntu-24.04
+    if: ${{ github.repository_owner == 'ricofritzsche' }}
+    outputs:
+      should_publish_any: ${{ steps.plan.outputs.should_publish_any }}
+      factstr_should_publish: ${{ steps.plan.outputs.factstr_should_publish }}
+      factstr_memory_should_publish: ${{ steps.plan.outputs.factstr_memory_should_publish }}
+      factstr_sqlite_should_publish: ${{ steps.plan.outputs.factstr_sqlite_should_publish }}
+      factstr_postgres_should_publish: ${{ steps.plan.outputs.factstr_postgres_should_publish }}
+      factstr_version: ${{ steps.plan.outputs.factstr_version }}
+      factstr_memory_version: ${{ steps.plan.outputs.factstr_memory_version }}
+      factstr_sqlite_version: ${{ steps.plan.outputs.factstr_sqlite_version }}
+      factstr_postgres_version: ${{ steps.plan.outputs.factstr_postgres_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Build crates.io publish plan
+        id: plan
+        run: node scripts/check-rust-publish-plan.mjs
+
+  validate-rust-packages:
+    name: Validate Rust crate packages
+    needs: detect-rust-release
+    if: ${{ github.repository_owner == 'ricofritzsche' && needs.detect-rust-release.outputs.should_publish_any == 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Package factstr
+        run: cargo package -p factstr
+
+      - name: Package factstr-memory
+        run: cargo package -p factstr-memory
+
+      - name: Package factstr-sqlite
+        run: cargo package -p factstr-sqlite
+
+      - name: Package factstr-postgres
+        run: cargo package -p factstr-postgres
+
+  publish-rust:
+    name: Publish Rust crates
+    needs:
+      - detect-rust-release
+      - validate-rust-packages
+    if: ${{ github.repository_owner == 'ricofritzsche' && needs.detect-rust-release.outputs.should_publish_any == 'true' }}
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # Trusted publishing only works after the crate has already had an initial
+      # crates.io release with trusted publishing configured. Before that, set
+      # CARGO_REGISTRY_TOKEN in the release environment for bootstrap publishes.
+      - name: Use bootstrap token when configured
+        id: bootstrap
+        shell: bash
+        env:
+          CARGO_REGISTRY_TOKEN_VALUE: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -n "$CARGO_REGISTRY_TOKEN_VALUE" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Authenticate with crates.io trusted publishing
+        id: auth
+        if: ${{ steps.bootstrap.outputs.has_token != 'true' }}
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish factstr
+        if: ${{ needs.detect-rust-release.outputs.factstr_should_publish == 'true' }}
+        run: cargo publish -p factstr --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.bootstrap.outputs.has_token == 'true' && secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+
+      - name: Publish factstr-memory
+        if: ${{ needs.detect-rust-release.outputs.factstr_memory_should_publish == 'true' }}
+        run: cargo publish -p factstr-memory --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.bootstrap.outputs.has_token == 'true' && secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+
+      - name: Publish factstr-sqlite
+        if: ${{ needs.detect-rust-release.outputs.factstr_sqlite_should_publish == 'true' }}
+        run: cargo publish -p factstr-sqlite --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.bootstrap.outputs.has_token == 'true' && secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+
+      - name: Publish factstr-postgres
+        if: ${{ needs.detect-rust-release.outputs.factstr_postgres_should_publish == 'true' }}
+        run: cargo publish -p factstr-postgres --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.bootstrap.outputs.has_token == 'true' && secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
