@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use factstr_node::{EventFilter, EventQuery, FactstrSqliteStore, NewEvent};
@@ -25,23 +26,44 @@ struct TemporaryDatabasePath {
 
 impl TemporaryDatabasePath {
     fn new() -> Self {
-        let unique_suffix = format!(
-            "{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("current time should be after unix epoch")
-                .as_nanos()
-        );
-        let directory_path = env::temp_dir().join(format!("factstr-node-sqlite-{unique_suffix}"));
-        fs::create_dir_all(&directory_path).expect("temporary sqlite directory should be created");
+        static SQLITE_TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-        let database_path = directory_path.join("factstr.sqlite");
+        for _ in 0..100 {
+            let unique_suffix = format!(
+                "{}-{}-{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("current time should be after unix epoch")
+                    .as_nanos(),
+                SQLITE_TEST_DIRECTORY_COUNTER.fetch_add(1, Ordering::Relaxed),
+            );
+            let directory_path =
+                env::temp_dir().join(format!("factstr-node-sqlite-{unique_suffix}"));
 
-        Self {
-            directory_path,
-            database_path,
+            match fs::create_dir(&directory_path) {
+                Ok(()) => {
+                    let database_path = directory_path.join("factstr.sqlite");
+                    assert!(
+                        !database_path.exists(),
+                        "sqlite test database path should not exist before opening the store",
+                    );
+
+                    return Self {
+                        directory_path,
+                        database_path,
+                    };
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    continue;
+                }
+                Err(error) => {
+                    panic!("temporary sqlite directory should be created: {error}");
+                }
+            }
         }
+
+        panic!("failed to create a unique temporary sqlite test directory");
     }
 
     fn database_path(&self) -> &Path {
