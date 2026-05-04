@@ -90,14 +90,19 @@ Install it:
 npm install @factstr/factstr-node
 ```
 
-The current Node and TypeScript package surface is intentionally narrow:
+The current Node.js binding package surface includes:
 
 - `FactstrMemoryStore`
+- `FactstrSqliteStore`
 - `append`
 - `query`
 - `appendIf`
+- `streamAll`
+- `streamTo`
+- `streamAllDurable`
+- `streamToDurable`
 
-The published package is memory-backed only in the current step. It does not yet expose SQLite, PostgreSQL, streams, durable streams, or transport behavior.
+`@factstr/factstr-node` currently exposes the Memory and SQLite stores. PostgreSQL support and transport behavior are not exposed through the Node package yet.
 
 See [Node and TypeScript](node-typescript.md) for the current package examples and boundary.
 
@@ -114,4 +119,4 @@ After these commands, you should know:
 - shared reusable durable-stream conformance exists in `factstr-conformance`
 - the current scope is still intentionally narrow and focused on core behavior
 - there are two direct runnable memory-store examples you can build on next
-- the published Node package is currently a separate memory-backed entry path with a smaller surface than the Rust workspace
+- the published Node package is currently a separate Node.js binding package with a smaller surface than the full Rust workspace, but it already exposes Memory, SQLite, live streams, and durable streams

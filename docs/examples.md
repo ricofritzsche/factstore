@@ -81,13 +81,12 @@ Use:
 
 - [`docs/node-typescript.md`](node-typescript.md) for the current package examples
 - [`factstr-node/NPM.md`](https://github.com/ricofritzsche/factstr/blob/main/factstr-node/NPM.md) for the npm-facing package documentation source
-- [`factstr-node/smoke/index.ts`](https://github.com/ricofritzsche/factstr/blob/main/factstr-node/smoke/index.ts) for the small package smoke consumer used in packaging verification
+- [`factstr-node/smoke/README.md`](https://github.com/ricofritzsche/factstr/blob/main/factstr-node/smoke/README.md) for the behavior-owned package verification suite
 
-Current Node and TypeScript examples are intentionally narrow:
+The exhaustive Node package behavior is verified by the smoke suite under `factstr-node/smoke`.
 
-- `FactstrMemoryStore`
-- `append`
-- `query`
-- `appendIf`
+That smoke suite is package verification, not a public example application.
 
-They do not currently demonstrate SQLite, PostgreSQL, streams, durable streams, or transport behavior because the published package does not expose those features yet.
+The package documentation source lives in `factstr-node/NPM.md`.
+
+Polished public examples for the Node.js bindings can be added separately later.

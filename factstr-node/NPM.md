@@ -1,8 +1,8 @@
 # @factstr/factstr-node
 
-`@factstr/factstr-node` is the Node and TypeScript language adapter for FACTSTR.
+`@factstr/factstr-node` provides Node.js bindings and TypeScript types for FACTSTR.
 
-It currently exposes two FACTSTR store adapters for Node and TypeScript with a small, explicit API:
+It exposes the Memory and SQLite stores from the Rust implementation without reimplementing FACTSTR semantics in TypeScript. The current package surface stays small and explicit:
 
 - `FactstrMemoryStore`
 - `FactstrSqliteStore`
@@ -207,15 +207,15 @@ Sequence and context values are exposed as `bigint` so FACTSTR's Rust `u64` mean
 
 `FactstrSqliteStore` is SQLite-backed and persistent at the database path you pass to the constructor.
 
-Both Node store adapters expose `append`, `query`, `appendIf`, `streamAll`, `streamTo`, `streamAllDurable`, and `streamToDurable`.
+Both Node.js store bindings expose `append`, `query`, `appendIf`, `streamAll`, `streamTo`, `streamAllDurable`, and `streamToDurable`.
 
 Live streams are future-only.
 
 Durable streams replay after the stored cursor and then continue with future delivery.
 
-PostgreSQL is still not exposed in the Node adapter yet.
+PostgreSQL support is still not exposed through the Node.js bindings yet.
 
-Transport behavior is still not exposed in the Node adapter yet.
+Transport behavior is still not exposed through the Node.js bindings yet.
 
 ## Docs and Source
 

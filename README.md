@@ -12,29 +12,28 @@ The repository is organized around explicit categories:
 - `factstr-memory`, `factstr-sqlite`, and `factstr-postgres` are store implementations that preserve that contract
 - `factstr-conformance` holds reusable semantic checks for store implementations
 - `factstr-interop` defines a backend-independent interop DTO boundary above the Rust core for later language adapters
-- `factstr-node` is the first language adapter and currently exposes a memory-backed TypeScript and Node package on top of `factstr-interop`
+- `factstr-node` is the first Node.js binding package and exposes Memory and SQLite bindings on top of `factstr-interop`
 
 `factstr-interop` is not a store implementation. It does not reimplement append, query, conditional append, streams, or durable streams. It keeps the first cross-language boundary explicit without making a language-specific adapter define the contract shape by accident.
 It is internal support for language adapters in this repository, not the user-facing package target for this step.
 
-`factstr-node` is not a store implementation. It is not a transport adapter. The current scope is intentionally narrow: a memory-backed TypeScript and Node package for append, query, and conditional append through the interop DTO boundary. The public package is intended to resolve prebuilt native binaries by platform, while `factstr-interop` stays internal support.
+`factstr-node` is not a store implementation. It is not a transport adapter. `@factstr/factstr-node` provides Node.js bindings and TypeScript types for FACTSTR. It currently exposes the Memory and SQLite stores with append, query, conditional append, live streams, and durable streams. PostgreSQL and transport behavior are not exposed through the Node package yet.
 
 ## Release Model
 
 Rust releases are managed by `release-plz`.
 
-FACTSTR uses one unified public version line for its public artifacts. The current public version is `0.2.1`.
-
-- publishable crates: `factstr`, `factstr-memory`, `factstr-sqlite`, `factstr-postgres`
+- publishable crate today: `factstr`
+- versioned but intentionally held back from crates.io publishing for now: `factstr-memory`, `factstr-sqlite`, `factstr-postgres`
 - non-products on crates.io: `factstr-interop`, the Rust `factstr-node` crate, and `factstr-conformance`
 
 The intended steady-state Rust path is GitHub Actions trusted publishing. Brand-new crates may still need a one-time bootstrap `CARGO_REGISTRY_TOKEN` in GitHub Actions for the first publish before trusted publishing takes over.
 
-The npm release lane publishes only `@factstr/factstr-node`.
+The npm release lane publishes the public Node.js binding package and its platform-specific native distribution support packages.
 
 - `@factstr/factstr-node` is the public npm package
 - `@factstr/factstr-node` follows the same public release version as the Rust core crates
-- the prebuilt packages under `factstr-node/npm/*` exist only for native distribution support
+- the prebuilt packages under `factstr-node/npm/*` are published as native distribution support packages
 
 Release automation stays split by lane:
 

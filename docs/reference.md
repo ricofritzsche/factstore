@@ -122,14 +122,22 @@ This stays intentionally small and focused on current shared behavior.
 
 ## Node and TypeScript Boundary
 
-`@factstr/factstr-node` currently exposes a smaller package boundary than the full Rust contract.
+`@factstr/factstr-node` provides Node.js bindings and TypeScript types for FACTSTR.
 
-- current Node package surface:
+- current Node.js binding package surface:
   - `FactstrMemoryStore`
+  - `FactstrSqliteStore`
   - `append`
   - `query`
   - `appendIf`
-- current Node package is memory-backed only
-- current Node package does not yet expose SQLite, PostgreSQL, streams, durable streams, or transport behavior
+  - `streamAll`
+  - `streamTo`
+  - `streamAllDurable`
+  - `streamToDurable`
+  - `DurableStream`
+  - `EventStreamSubscription`
+- current Node.js bindings expose the Memory and SQLite stores from the Rust implementation
+- PostgreSQL support and transport behavior are not exposed through the Node package yet
+- the Rust contract remains the source of truth for FACTSTR semantics
 
 See [Node and TypeScript](node-typescript.md) for the current package examples.
