@@ -103,7 +103,7 @@ All stores must preserve the same observable append/query/append-if/stream behav
 - `stream_all(handle)` delivers all future committed batches to the handler
 - `stream_to(&EventQuery, handle)` delivers only future committed facts that match that query, preserving original committed order inside each delivered batch
 - `stream_all_durable(&DurableStream, handle)` resumes from the stored durable cursor, replays committed batches after it, and then continues with future committed batches
-- `stream_to_durable(&DurableStream, &EventQuery, handle)` does the same with query-defined filtering
+- `stream_to_durable(&DurableStream, &EventQuery, handle)` does the same with filtering for the facts relevant to that durable stream
 - durable replay starts strictly after the stored cursor
 - durable replay transitions into future committed delivery without duplicates or gaps
 - durable cursors do not advance past undelivered committed facts

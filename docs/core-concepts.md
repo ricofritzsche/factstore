@@ -10,14 +10,14 @@ Events live in one global append-only log. Sequence numbers are global and monot
 
 One committed append batch receives one consecutive sequence range.
 
-## Query-Defined Consistency Context
+## Command Context Consistency
 
-Consistency is defined by the facts relevant to a command, not by a built-in aggregate boundary.
+Consistency is checked against the facts relevant to a command, not by a built-in aggregate boundary. Read this article for more details: [Aggregateless Event Sourcing](https://ricofritzsche.me/aggregateless-event-sourcing/).
 
 A caller can:
 
-- query a context
-- observe its `current_context_version`
+- query the facts relevant to the command
+- observe the `current_context_version`
 - append only if that context still has the expected version
 
 That is what `append_if` enforces.

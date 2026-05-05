@@ -155,7 +155,7 @@ subscription.unsubscribe();
 
 ## Conditional Append
 
-`appendIf` checks whether the relevant query-defined context has changed before appending new facts.
+`appendIf` checks whether the relevant command context has changed before appending new facts.
 
 ```ts
 import {

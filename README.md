@@ -101,6 +101,7 @@ Current boundaries:
 - SQLite guidance: [/factstr/sqlite/](https://ricofritzsche.github.io/factstr/sqlite/)
 - Node and TypeScript: [/factstr/node-typescript/](https://ricofritzsche.github.io/factstr/node-typescript/)
 - Reference: [/factstr/reference/](https://ricofritzsche.github.io/factstr/reference/)
+- Core Ideas: [Aggregateless Event Sourcing](https://ricofritzsche.me/aggregateless-event-sourcing/)
 
 ## Repository
 

@@ -19,7 +19,7 @@ The main use is still the same: a feature slice owns a query model, registers a 
 ## Durable Streams
 
 - `stream_all_durable(&DurableStream, handle)` resumes from that durable stream's stored cursor, replays committed batches after it, then continues with future committed batches
-- `stream_to_durable(&DurableStream, &EventQuery, handle)` does the same with query-defined filtering
+- `stream_to_durable(&DurableStream, &EventQuery, handle)` does the same with filtering for the facts relevant to that durable stream
 - replay starts strictly after the stored cursor
 - replay uses ascending committed order
 - replay/live transition has no duplicates or gaps

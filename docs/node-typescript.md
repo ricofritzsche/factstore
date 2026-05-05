@@ -111,7 +111,7 @@ if (outcome.conflict) {
 }
 ```
 
-`appendIf(...)` checks whether the query-defined context changed before the new facts are committed.
+`appendIf(...)` checks whether the relevant command context changed before the new facts are committed.
 
 ## Live Streams
 
