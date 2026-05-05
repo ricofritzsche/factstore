@@ -94,13 +94,13 @@ Current boundaries:
 ## Documentation
 
 - Website: [factstr.com](https://factstr.com)
-- Getting Started: [docs/getting-started.md](docs/getting-started.md)
-- Core Concepts: [docs/core-concepts.md](docs/core-concepts.md)
-- Stores: [docs/stores.md](docs/stores.md)
-- Streams: [docs/streams.md](docs/streams.md)
-- SQLite guidance: [docs/sqlite.md](docs/sqlite.md)
-- Node and TypeScript: [docs/node-typescript.md](docs/node-typescript.md)
-- Reference: [docs/reference.md](docs/reference.md)
+- Getting Started: [/factstr/getting-started/](https://ricofritzsche.github.io/factstr/getting-started/)
+- Core Concepts: [/factstr/core-concepts/](https://ricofritzsche.github.io/factstr/core-concepts/)
+- Stores: [/factstr/stores/](https://ricofritzsche.github.io/factstr/stores/)
+- Streams: [/factstr/streams/](https://ricofritzsche.github.io/factstr/streams/)
+- SQLite guidance: [/factstr/sqlite/](https://ricofritzsche.github.io/factstr/sqlite/)
+- Node and TypeScript: [/factstr/node-typescript/](https://ricofritzsche.github.io/factstr/node-typescript/)
+- Reference: [/factstr/reference/](https://ricofritzsche.github.io/factstr/reference/)
 
 ## Repository
 
