@@ -1,34 +1,55 @@
 # FACTSTR
 
-One Rust contract for facts, queries, streams, and durable streams.
+FACTSTR is a Rust event store built around append-only facts, command context consistency, committed-batch streams, and durable replay.
 
-## Current status
+It helps applications keep decisions local to the facts that matter, append new facts safely, and build query models from committed batches without introducing aggregate-first structure.
 
-**Runtime**  
-Rust core · Node/TypeScript package
+## What You Can Use
 
-**Stores**  
-Memory · SQLite · PostgreSQL
+FACTSTR currently provides:
 
-**Published package**  
-`@factstr/factstr-node`
+- a Rust contract crate: `factstr`
+- store implementations for Memory, SQLite, and PostgreSQL
+- live streams with committed-batch delivery
+- durable streams for replay and catch-up
+- Node.js bindings and TypeScript types through `@factstr/factstr-node`
 
-**Implemented now**  
-Append · Query · Conditional append · Streams · Durable streams
+## Why It Matters
 
-**Documentation**  
-GitHub Pages docs
+Use FACTSTR when you want:
 
-**Shared conformance**  
-Cross-store durable-stream conformance
+- append-only facts instead of mutable domain state as the source of truth
+- command context consistency instead of aggregate-centric locking
+- explicit sequence numbers and ordered reads
+- projections that can replay and continue after restart
+- an embedded SQLite option before introducing external infrastructure
+- a PostgreSQL option when the application already runs PostgreSQL
 
-**License**  
-Apache-2.0 / MIT
+## Install
+
+### Rust
+
+```toml
+[dependencies]
+factstr = "0.3"
+factstr-sqlite = "0.3"
+```
+
+Memory and PostgreSQL stores are also available through `factstr-memory` and `factstr-postgres`.
+
+### Node.js and TypeScript
+
+```bash
+npm install @factstr/factstr-node
+```
+
+The Node.js bindings currently expose the Memory and SQLite stores. PostgreSQL support is not exposed through Node.js yet.
+
+## Start Here
 
 - [Getting Started](getting-started.md)
 - [Node and TypeScript](node-typescript.md)
-- [Examples](examples.md)
 - [Core Concepts](core-concepts.md)
+- [Stores](stores.md)
 - [Streams](streams.md)
 - [Reference](reference.md)
-- [Stores](stores.md)
