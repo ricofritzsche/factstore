@@ -38,9 +38,8 @@ Integration tests for this crate require a PostgreSQL database.
 
 ```toml
 [dependencies]
-factstr = "0.3.1"
-factstr-postgres = "0.3.1"
-serde_json = "1"
+factstr = "0.3"
+factstr-postgres = "0.3"
 ```
 
 ## Minimal example

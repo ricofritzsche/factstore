@@ -33,6 +33,15 @@ Use this crate together with one of the runtime store implementations:
 
 The core crate stays independent of those implementations.
 
+## Add to `Cargo.toml`
+
+```toml
+[dependencies]
+factstr = "0.3"
+```
+
+Use the GitHub repository when you want to work on FACTSTR itself or test unreleased changes before a crates.io release.
+
 ## Core idea
 
 FACTSTR treats events as facts in one append-only log.

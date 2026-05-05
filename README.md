@@ -1,311 +1,121 @@
 # FACTSTR
 
-FACTSTR is a Rust event store built around immutable facts, command-context consistency, committed-batch streams, and durable replay.
+FACTSTR is a Rust event store built around append-only facts, command context consistency, committed-batch streams, and durable replay.
 
-It is meant to be easy to start with: append the first fact, read the relevant facts, check context safely, and keep feature-owned query models current from committed batches.
+It is designed to start small: append facts, read the facts relevant to a decision, append conditionally when the command context has not changed, and keep query models current from committed batches.
 
-## Repository Shape
+[![crates.io](https://img.shields.io/crates/v/factstr?label=Cargo&color=8A2BE2)](https://crates.io/crates/factstr)
+[![npm](https://img.shields.io/npm/v/%40factstr%2Ffactstr-node?label=npm&color=CB3837)](https://www.npmjs.com/package/@factstr/factstr-node)
 
-The repository is organized around explicit categories:
+## Install
 
-- `factstr` defines the shared Rust contract
-- `factstr-memory`, `factstr-sqlite`, and `factstr-postgres` are store implementations that preserve that contract
-- `factstr-conformance` holds reusable semantic checks for store implementations
-- `factstr-interop` defines a backend-independent interop DTO boundary above the Rust core for later language adapters
-- `factstr-node` is the first Node.js binding package and exposes Memory and SQLite bindings on top of `factstr-interop`
+### Rust
 
-`factstr-interop` is not a store implementation. It does not reimplement append, query, conditional append, streams, or durable streams. It keeps the first cross-language boundary explicit without making a language-specific adapter define the contract shape by accident.
-It is internal support for language adapters in this repository, not the user-facing package target for this step.
+Core contract:
 
-`factstr-node` is not a store implementation. It is not a transport adapter. `@factstr/factstr-node` provides Node.js bindings and TypeScript types for FACTSTR. It currently exposes the Memory and SQLite stores with append, query, conditional append, live streams, and durable streams. PostgreSQL and transport behavior are not exposed through the Node package yet.
+```toml
+[dependencies]
+factstr = "0.3"
+```
 
-## Release Model
+Memory:
 
-Rust crates are published by `.github/workflows/publish-rust.yml`.
+```toml
+[dependencies]
+factstr = "0.3"
+factstr-memory = "0.3"
+```
 
-- publishable crate today: `factstr`
-- versioned but intentionally held back from crates.io publishing for now: `factstr-memory`, `factstr-sqlite`, `factstr-postgres`
-- non-products on crates.io: `factstr-interop`, the Rust `factstr-node` crate, and `factstr-conformance`
+SQLite:
 
-Rust publishing is version-driven: a crate is published only when its local version is not already present on crates.io. Brand-new crate publishes may still need a one-time `CARGO_REGISTRY_TOKEN` bootstrap in the `release` environment before crates.io trusted publishing takes over. Internal crates are never published.
+```toml
+[dependencies]
+factstr = "0.3"
+factstr-sqlite = "0.3"
+```
 
-The npm release lane publishes the public Node.js binding package and its platform-specific native distribution support packages.
+PostgreSQL:
 
-- `@factstr/factstr-node` is the public npm package
-- `@factstr/factstr-node` follows the same public release version as the Rust core crates
-- the prebuilt packages under `factstr-node/npm/*` are published as native distribution support packages
+```toml
+[dependencies]
+factstr = "0.3"
+factstr-postgres = "0.3"
+```
 
-Release automation stays split by lane:
+### Node.js and TypeScript
 
-- Rust crates publish through the Rust release lane
-- `@factstr/factstr-node` publishes through the npm release lane
+```bash
+npm install @factstr/factstr-node
+```
 
-The public version line is shared even though the publish lanes remain separate. Node publishing is intended to run through GitHub Actions trusted publishing on GitHub-hosted runners, not from a developer laptop.
+## What FACTSTR Gives You
 
-## Links
+- append-only event records with global sequence numbers
+- conditional append through command context consistency
+- ordered queries with explicit read cursor and context version meanings
+- live streams that deliver committed batches after persistence succeeds
+- durable streams that replay after a stored cursor and then continue live
+- Memory, SQLite, and PostgreSQL store implementations behind one Rust contract
+- Node.js bindings with TypeScript types for Memory and SQLite
 
-- Website: https://factstr.com
-- Local docs entry page: docs/index.md
-- Getting started: docs/getting-started.md
-- Streams: docs/streams.md
-- Stores: docs/stores.md
-- SQLite store guidance: docs/sqlite.md
-- Reference: docs/reference.md
+## Rust Crates
 
-## Why FACTSTR
+- `factstr`: shared Rust contract crate
+- `factstr-memory`: in-memory store for tests, examples, and local development
+- `factstr-sqlite`: embedded persistent SQLite store
+- `factstr-postgres`: PostgreSQL-backed store
+- `factstr-conformance`: internal semantic test support
+- `factstr-interop`: internal interop boundary for bindings
+- Rust crate part of `factstr-node`: internal build substrate for the npm package
 
-FACTSTR is for software that should grow feature by feature without forcing aggregate-centric structure first.
+For normal Rust projects, install the contract crate plus one store crate.
 
-It keeps the important behavior explicit:
+## Node.js Bindings
 
-- facts are append-only
-- consistency is checked against the relevant command context
-- reads stay ordered
-- committed batches are delivered only after append succeeds
-- durable streams replay from a stored cursor and then continue live
+`@factstr/factstr-node` provides Node.js bindings and TypeScript types for FACTSTR. It exposes the Memory and SQLite stores from the Rust implementation without reimplementing FACTSTR semantics in TypeScript.
 
-This gives a direct path for:
+Current package surface:
 
-- starting with the first real feature
-- keeping decisions local to the relevant facts
-- updating feature-owned query models from committed batches
-- replaying and catching up after restart
-- choosing embedded or database-backed persistence without changing the core model
+- `FactstrMemoryStore`
+- `FactstrSqliteStore`
+- `append`
+- `query`
+- `appendIf`
+- `streamAll`
+- `streamTo`
+- `streamAllDurable`
+- `streamToDurable`
 
-## Implemented Now
+Current boundaries:
 
-The current shared contract supports:
+- PostgreSQL support is not exposed through Node.js yet
+- transport behavior is not exposed
 
-- append
-- query
-- conditional append with typed conflict failure
-- `stream_all`
-- `stream_to`
-- `stream_all_durable`
-- `stream_to_durable`
-- event-type filtering
-- payload-predicate filtering
-- explicit separation of:
-  - `last_returned_sequence_number`
-  - `current_context_version`
+## Documentation
 
-The current public contract types are:
+- Website: [factstr.com](https://factstr.com)
+- Getting Started: [docs/getting-started.md](docs/getting-started.md)
+- Core Concepts: [docs/core-concepts.md](docs/core-concepts.md)
+- Stores: [docs/stores.md](docs/stores.md)
+- Streams: [docs/streams.md](docs/streams.md)
+- SQLite guidance: [docs/sqlite.md](docs/sqlite.md)
+- Node and TypeScript: [docs/node-typescript.md](docs/node-typescript.md)
+- Reference: [docs/reference.md](docs/reference.md)
 
-- `NewEvent`
-- `EventRecord`
-- `EventFilter`
-- `EventQuery`
-- `QueryResult`
-- `AppendResult`
-- `HandleStream`
-- `StreamHandlerError`
-- `DurableStream`
-- `EventStream`
-- `EventStore`
-- `EventStoreError`
+## Repository
 
-The current interop boundary types are:
-
-- `InteropNewEvent`
-- `InteropEventRecord`
-- `InteropEventFilter`
-- `InteropEventQuery`
-- `InteropQueryResult`
-- `InteropAppendResult`
-- `InteropConditionalAppendConflict`
-- `InteropError`
-
-## Stores
-
-FACTSTR currently includes three store implementations.
-
-### `factstr-memory`
-
-The memory store is the semantic reference implementation.
-
-Use it for:
-
-- tests
-- local development
-- direct reasoning about behavior
-
-It implements:
-
-- append
-- query
-- append_if
-- `stream_all`
-- `stream_to`
-- `stream_all_durable`
-- `stream_to_durable`
-
-Durable streams in memory are limited to the lifetime of one `MemoryStore` instance.
-
-### `factstr-sqlite`
-
-The SQLite store is the embedded persistent implementation. For guidance on when SQLite is the right store and when it is not, see [docs/sqlite.md](docs/sqlite.md).
-
-Use it for:
-
-- local persistence without external infrastructure
-- durable replay and catch-up across restart
-- validating the shared contract against an embedded store
-
-It implements:
-
-- append
-- query
-- append_if
-- `stream_all`
-- `stream_to`
-- `stream_all_durable`
-- `stream_to_durable`
-
-### `factstr-postgres`
-
-The PostgreSQL store implements the same contract on top of PostgreSQL using SQLx.
-
-Use it for:
-
-- teams that already operate PostgreSQL
-- persistence with familiar database tooling
-- validating the shared contract against a database-backed store
-
-It implements:
-
-- append
-- query
-- append_if
-- `stream_all`
-- `stream_to`
-- `stream_all_durable`
-- `stream_to_durable`
-
-## Core Semantics
-
-These are the load-bearing behaviors implemented today.
-
-### Append
-
-- events are append-only
-- sequence numbers are global and monotonically increasing
-- one committed batch receives one consecutive sequence range
-- `AppendResult` reports:
-  - `first_sequence_number`
-  - `last_sequence_number`
-  - `committed_count`
-- empty append input returns `EventStoreError::EmptyAppend`
-
-### Query
-
-- returned events are ordered by ascending `sequence_number`
-- each returned `EventRecord` includes `occurred_at`
-- `occurred_at` is recorded event time, not the ordering key
-- `min_sequence_number` is an exclusive read cursor
-- `last_returned_sequence_number` describes only the returned rows
-- `current_context_version` describes the full matching context
-- `current_context_version` ignores `min_sequence_number`
-
-### Conditional append
-
-- `append_if` checks the full conflict context
-- `append_if` ignores `min_sequence_number` for conflict detection
-- stale context returns `EventStoreError::ConditionalAppendConflict`
-- failed conditional append does not partially append a batch
-- failed conditional append does not consume sequence numbers that later successful appends would observe
-
-### Streams
-
-- notifications happen only after a successful commit
-- each committed append batch is delivered as one batch
-- mixed committed batches are delivered as one filtered batch when matches exist
-- delivery order follows committed global sequence order
-- failed conditional append delivers nothing
-- multiple stream handlers can observe the same committed batches
-- handler failure does not roll back append success
-
-### Durable streams
-
-- durable replay starts strictly after the stored cursor
-- replay/live transition has no duplicates or gaps
-- durable cursors do not advance past undelivered committed facts
-- Memory implements durable streams within one `MemoryStore` instance only
-- SQLite implements durable streams with persisted cursors and replay across restart
-- PostgreSQL implements durable streams with persisted cursors and replay across restart
-
-## Query Model
-
-`EventQuery` currently contains:
-
-- `filters: Option<Vec<EventFilter>>`
-- `min_sequence_number: Option<u64>`
-
-`EventFilter` currently contains:
-
-- `event_types: Option<Vec<String>>`
-- `payload_predicates: Option<Vec<serde_json::Value>>`
-
-Current matching rules:
-
-- `EventQuery.filters` is OR across filters
-- within one filter, `event_types` is OR across event types
-- within one filter, `payload_predicates` is OR across payload predicates
-- within one filter, event-type matching and payload matching are combined with AND
-- omitted or empty `filters` means all events
-- `event_types: None` means event type is unconstrained
-- `payload_predicates: None` means payload is unconstrained
-- `event_types: Some([])` means explicit empty event-type match set
-- `payload_predicates: Some([])` means explicit empty payload-predicate match set
-
-Payload predicates use recursive subset matching.
-
-Current rules:
-
-- scalar values must be equal
-- objects match recursively by subset
-- arrays match if every predicate element is contained somewhere in the payload array
-- array element containment uses the same recursive subset logic
-- extra keys in the event payload are allowed
-- extra array elements in the event payload are allowed
-
-## Quick Start
-
-Check the workspace:
+Use the published crates and npm package for normal projects. Clone this repository when you want to work on FACTSTR itself, inspect examples, or test unreleased changes.
 
 ```bash
 cargo check
+cargo test --workspace --exclude factstr-postgres
 ```
 
-Run the memory-store tests:
+Rust crates and the Node.js package are published by separate GitHub Actions workflows.
 
-```bash
-cargo test -p factstr-memory
-```
+## License
 
-Run the basic in-memory example:
+Licensed under either of:
 
-```bash
-cargo run --manifest-path examples/basic-memory/Cargo.toml
-```
-
-Run the feature-owned query-model example:
-
-```bash
-cargo run --manifest-path examples/account-projection/Cargo.toml
-```
-
-Run the PostgreSQL store tests:
-
-```bash
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres cargo test -p factstr-postgres
-```
-
-Run the full workspace test suite with PostgreSQL enabled:
-
-```bash
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres cargo test
-```
-
-## Using FACTSTR From Another Repository
-
-The current intended consumption path is a git dependency.
+- MIT
+- Apache-2.0

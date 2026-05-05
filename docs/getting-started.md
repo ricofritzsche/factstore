@@ -1,88 +1,86 @@
 # Getting Started
 
-This page is the shortest path to the current FACTSTR entry points and to what is already implemented.
+This page shows the shortest path to using FACTSTR from a Rust project or from Node.js and TypeScript.
 
-## Prerequisites
+[![crates.io](https://img.shields.io/crates/v/factstr?label=Cargo&color=8A2BE2)](https://crates.io/crates/factstr)
+[![npm](https://img.shields.io/npm/v/%40factstr%2Ffactstr-node?label=npm&color=CB3837)](https://www.npmjs.com/package/@factstr/factstr-node)
 
-- Rust toolchain with Cargo
-- PostgreSQL only if you want to run the PostgreSQL store tests
+## Use FACTSTR From Rust
 
-## Clone The Repository
+For normal Rust projects, use the published crates from crates.io.
 
-```bash
-git clone https://github.com/ricofritzsche/factstr.git
-cd factstr
+Core contract only:
+
+```toml
+[dependencies]
+factstr = "0.3"
 ```
 
-## Start With Rust
+Memory store:
 
-If you want the Rust workspace entry path, start here.
-
-### Check The Workspace
-
-```bash
-cargo check
+```toml
+[dependencies]
+factstr = "0.3"
+factstr-memory = "0.3"
 ```
 
-This verifies the shared contract crate, the memory store, the SQLite store, the PostgreSQL store, and the conformance test crate all compile together.
+SQLite store:
 
-### Start With The Memory Store
-
-Run the in-memory store tests first:
-
-```bash
-cargo test -p factstr-memory
+```toml
+[dependencies]
+factstr = "0.3"
+factstr-sqlite = "0.3"
 ```
 
-This is the simplest way to see the current semantic contract in action:
+PostgreSQL store:
 
-- append
-- query
-- conditional append
-- projection updates through streams
-
-If you want the first direct code path after that, run the basic memory example:
-
-```bash
-cargo run --manifest-path examples/basic-memory/Cargo.toml
+```toml
+[dependencies]
+factstr = "0.3"
+factstr-postgres = "0.3"
 ```
 
-See [Examples](examples.md) for the source and what it proves.
+Choose a store based on how you want to run FACTSTR:
 
-For the common feature-slice path, run the account projection example next:
+- use `factstr-memory` for tests and local experiments
+- use `factstr-sqlite` for embedded persistence without a separate database server
+- use `factstr-postgres` when the application already runs PostgreSQL
 
-```bash
-cargo run --manifest-path examples/account-projection/Cargo.toml
+## Minimal Rust Example
+
+This is the shortest concrete Rust example using the in-memory store.
+
+```rust
+use factstr::{EventQuery, EventStore, NewEvent};
+use factstr_memory::MemoryStore;
+use serde_json::json;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let store = MemoryStore::new();
+
+    store.append(vec![NewEvent {
+        event_type: "item-added".to_owned(),
+        payload: json!({ "sku": "ABC-123", "quantity": 1 }),
+    }])?;
+
+    let result = store.query(&EventQuery::all())?;
+    assert_eq!(result.event_records.len(), 1);
+
+    Ok(())
+}
 ```
 
-That example shows a feature slice owning a read model, streaming only the facts relevant to that model, and updating it from committed batches.
+That example shows the basic contract shape:
 
-For the SQLite-backed feature-slice example, run the bank CLI after that:
+- create a store
+- append one fact
+- query it back
 
-```bash
-cargo run --manifest-path examples/bank-slices-cli/Cargo.toml
-```
+See [Examples](examples.md) for repository examples that go further into projections and feature slices.
 
-That example shows:
+## Use FACTSTR From Node.js and TypeScript
 
-- write-side `*Command` slices such as `open_account`, `deposit`, `withdraw`, and `transfer`
-- read-side query slices such as `fetch_balance` and `fetch_movement_history`
-- a real `stream_to(...)` registration owned locally by `fetch_balance`
-- SQLite-backed facts with an interactive CLI
-
-### Run The PostgreSQL Store Tests
-
-Set `DATABASE_URL` to a PostgreSQL database where the configured user can create schemas, then run:
-
-```bash
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres cargo test -p factstr-postgres
-```
-
-The PostgreSQL tests create a fresh schema per test run and exercise the same conformance behavior as the memory store.
-
-## Start With Node and TypeScript
-
-If you want the published package entry path instead, start with `@factstr/factstr-node`.
+`@factstr/factstr-node` provides Node.js bindings and TypeScript types for FACTSTR.
 
 Install it:
 
@@ -90,7 +88,7 @@ Install it:
 npm install @factstr/factstr-node
 ```
 
-The current Node.js binding package surface includes:
+The current package surface includes:
 
 - `FactstrMemoryStore`
 - `FactstrSqliteStore`
@@ -102,21 +100,23 @@ The current Node.js binding package surface includes:
 - `streamAllDurable`
 - `streamToDurable`
 
-`@factstr/factstr-node` currently exposes the Memory and SQLite stores. PostgreSQL support and transport behavior are not exposed through the Node package yet.
+Current boundaries:
 
-See [Node and TypeScript](node-typescript.md) for the current package examples and boundary.
+- PostgreSQL support is not exposed through Node.js yet
+- transport behavior is not exposed
 
-## What You Should Understand After This Page
+See [Node and TypeScript](node-typescript.md) for the current package examples and boundaries.
 
-After these commands, you should know:
+## Next Pages
 
-- the repository already has a shared runtime contract
-- memory, SQLite, and PostgreSQL preserve the same observable append/query/conditional-append behavior
-- projection-style updates are implemented as part of the current contract through streams
-- a feature slice can stream relevant future facts with `stream_to(&EventQuery, handle)`
-- the SQLite bank example uses a real stream-driven read-side slice while keeping command and query naming separate
-- all three stores implement durable replay/catch-up through `stream_*_durable(...)`
-- shared reusable durable-stream conformance exists in `factstr-conformance`
-- the current scope is still intentionally narrow and focused on core behavior
-- there are two direct runnable memory-store examples you can build on next
-- the published Node package is currently a separate Node.js binding package with a smaller surface than the full Rust workspace, but it already exposes Memory, SQLite, live streams, and durable streams
+- [Core Concepts](core-concepts.md)
+- [Stores](stores.md)
+- [Streams](streams.md)
+- [Node and TypeScript](node-typescript.md)
+- [Reference](reference.md)
+
+## Work On The Repository
+
+Use the GitHub repository when you want to contribute to FACTSTR or test unreleased changes.
+
+Start from the repository README for the current contributor and release workflow context.
