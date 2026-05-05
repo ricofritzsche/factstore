@@ -1,5 +1,7 @@
 # FACTSTR
 
+[![crates.io](https://img.shields.io/crates/v/factstr?label=Cargo&color=8A2BE2)](https://crates.io/crates/factstr) [![npm](https://img.shields.io/npm/v/%40factstr%2Ffactstr-node?label=npm&color=CB3837)](https://www.npmjs.com/package/@factstr/factstr-node)
+
 FACTSTR is a Rust event store built around append-only facts, command context consistency, committed-batch streams, and durable replay.
 
 It helps applications keep decisions local to the facts that matter, append new facts safely, and build query models from committed batches without introducing aggregate-first structure.
