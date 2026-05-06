@@ -15,31 +15,31 @@ Core contract:
 
 ```toml
 [dependencies]
-factstr = "0.3"
+factstr = "0.4"
 ```
 
 Memory:
 
 ```toml
 [dependencies]
-factstr = "0.3"
-factstr-memory = "0.3"
+factstr = "0.4"
+factstr-memory = "0.4"
 ```
 
 SQLite:
 
 ```toml
 [dependencies]
-factstr = "0.3"
-factstr-sqlite = "0.3"
+factstr = "0.4"
+factstr-sqlite = "0.4"
 ```
 
 PostgreSQL:
 
 ```toml
 [dependencies]
-factstr = "0.3"
-factstr-postgres = "0.3"
+factstr = "0.4"
+factstr-postgres = "0.4"
 ```
 
 ### Node.js and TypeScript
