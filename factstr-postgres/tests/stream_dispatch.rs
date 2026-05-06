@@ -13,7 +13,8 @@ use serde_json::json;
 
 #[test]
 fn blocking_handler_does_not_block_append_completion_or_later_queries() {
-    let store = Arc::new(support::create_store());
+    let temporary_schema = support::TemporarySchema::new();
+    let store = Arc::new(temporary_schema.create_store());
     let (handler_started_sender, handler_started_receiver) = mpsc::channel();
     let release_handler = Arc::new((Mutex::new(false), Condvar::new()));
 
@@ -73,7 +74,8 @@ fn blocking_handler_does_not_block_append_completion_or_later_queries() {
 
 #[test]
 fn already_snapshotted_delivery_may_arrive_after_unsubscribe_but_future_commits_do_not() {
-    let store = Arc::new(support::create_store());
+    let temporary_schema = support::TemporarySchema::new();
+    let store = Arc::new(temporary_schema.create_store());
     let delivered_batches = Arc::new(Mutex::new(Vec::new()));
     let invocation_count = Arc::new(AtomicUsize::new(0));
     let (first_handler_started_sender, first_handler_started_receiver) = mpsc::channel();

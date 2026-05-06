@@ -302,6 +302,7 @@ dependencies = [
  "factstr",
  "factstr-interop",
  "factstr-memory",
+ "factstr-postgres",
  "factstr-sqlite",
  "napi",
  "napi-build",

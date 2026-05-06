@@ -2,10 +2,11 @@
 
 `@factstr/factstr-node` provides Node.js bindings and TypeScript types for FACTSTR.
 
-It exposes the Memory and SQLite stores from the Rust implementation without reimplementing FACTSTR semantics in TypeScript. The current package surface stays small and explicit:
+It exposes the Memory, SQLite, and PostgreSQL stores from the Rust implementation without reimplementing FACTSTR semantics in TypeScript. The current package surface stays small and explicit:
 
 - `FactstrMemoryStore`
 - `FactstrSqliteStore`
+- `FactstrPostgresStore`
 - `append`
 - `query`
 - `appendIf`
@@ -18,7 +19,7 @@ It exposes the Memory and SQLite stores from the Rust implementation without rei
 
 Current scope is intentionally narrow:
 
-- memory-backed and SQLite-backed store access
+- memory-backed, SQLite-backed, and PostgreSQL-backed store access
 - explicit append, query, conditional-append, live-stream, and durable-stream behavior
 - non-durable live streams for future committed batches
 - durable streams that replay after the stored cursor and then continue with future committed delivery
@@ -26,7 +27,6 @@ Current scope is intentionally narrow:
 
 Not included yet:
 
-- PostgreSQL support
 - transport behavior
 
 ## Install
@@ -35,7 +35,7 @@ Not included yet:
 npm install @factstr/factstr-node
 ```
 
-SQLite support is included in the same package. `FactstrMemoryStore` is memory-backed, while `FactstrSqliteStore` is SQLite-backed and persistent.
+SQLite and PostgreSQL support are included in the same package. `FactstrMemoryStore` is memory-backed, `FactstrSqliteStore` is SQLite-backed and persistent, and `FactstrPostgresStore` connects to PostgreSQL through a database URL.
 
 ## Supported Platforms
 
@@ -54,11 +54,13 @@ import {
   type EventQuery,
   type NewEvent,
   FactstrMemoryStore,
+  FactstrPostgresStore,
   FactstrSqliteStore,
 } from '@factstr/factstr-node';
 
 const memoryStore = new FactstrMemoryStore();
 const sqliteStore = new FactstrSqliteStore('./factstr.sqlite');
+const postgresStore = new FactstrPostgresStore(process.env.DATABASE_URL!);
 
 const event: NewEvent = {
   event_type: 'item-added',
@@ -67,6 +69,7 @@ const event: NewEvent = {
 
 memoryStore.append([event]);
 sqliteStore.append([event]);
+postgresStore.append([event]);
 
 const query: EventQuery = {
   filters: [
@@ -129,6 +132,8 @@ Callbacks receive one committed batch as an array of `EventRecord` values.
 `FactstrMemoryStore` keeps durable stream state only for the lifetime of the current memory store instance.
 
 `FactstrSqliteStore` persists durable stream state in SQLite, so the same durable stream name can resume across reopening the same database path.
+
+`FactstrPostgresStore` persists facts and durable stream state in PostgreSQL, so the same durable stream name can resume as long as the database state is retained.
 
 ```ts
 import {
@@ -201,19 +206,19 @@ Sequence and context values are exposed as `bigint` so FACTSTR's Rust `u64` mean
 
 `occurred_at` is exposed as an RFC 3339 string on each returned `EventRecord`.
 
-## Adapter Boundaries
+## Binding Boundaries
 
 `FactstrMemoryStore` is memory-backed and process-local.
 
 `FactstrSqliteStore` is SQLite-backed and persistent at the database path you pass to the constructor.
 
-Both Node.js store bindings expose `append`, `query`, `appendIf`, `streamAll`, `streamTo`, `streamAllDurable`, and `streamToDurable`.
+`FactstrPostgresStore` is PostgreSQL-backed and connects through the database URL you pass to the constructor.
+
+All three Node.js store bindings expose `append`, `query`, `appendIf`, `streamAll`, `streamTo`, `streamAllDurable`, and `streamToDurable`.
 
 Live streams are future-only.
 
 Durable streams replay after the stored cursor and then continue with future delivery.
-
-PostgreSQL support is still not exposed through the Node.js bindings yet.
 
 Transport behavior is still not exposed through the Node.js bindings yet.
 

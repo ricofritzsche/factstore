@@ -127,6 +127,7 @@ This stays intentionally small and focused on current shared behavior.
 - current Node.js binding package surface:
   - `FactstrMemoryStore`
   - `FactstrSqliteStore`
+  - `FactstrPostgresStore`
   - `append`
   - `query`
   - `appendIf`
@@ -136,8 +137,8 @@ This stays intentionally small and focused on current shared behavior.
   - `streamToDurable`
   - `DurableStream`
   - `EventStreamSubscription`
-- current Node.js bindings expose the Memory and SQLite stores from the Rust implementation
-- PostgreSQL support and transport behavior are not exposed through the Node package yet
+- current Node.js bindings expose the Memory, SQLite, and PostgreSQL stores from the Rust implementation
+- PostgreSQL requires a database URL, and transport behavior is not exposed through the Node package yet
 - the Rust contract remains the source of truth for FACTSTR semantics
 
 See [Node and TypeScript](node-typescript.md) for the current package examples.

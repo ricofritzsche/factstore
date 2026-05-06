@@ -20,6 +20,7 @@ path = "src/lib.rs"
 factstr = { version = "0.3.2", path = "../factstr" }
 factstr-interop = { version = "0.3.2", path = "../factstr-interop" }
 factstr-memory = { version = "0.3.2", path = "../factstr-memory" }
+factstr-postgres = { version = "0.3.2", path = "../factstr-postgres" }
 factstr-sqlite = { version = "0.3.2", path = "../factstr-sqlite" }
 napi = { version = "2", default-features = false, features = ["dyn-symbols", "napi8", "serde-json"] }
 napi-derive = "2"

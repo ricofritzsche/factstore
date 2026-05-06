@@ -127,6 +127,40 @@ fn durable_cursor_is_persisted_and_reopen_resumes_after_the_stored_cursor() {
 }
 
 #[test]
+fn durable_replay_returns_event_records_with_original_occurred_at() {
+    let temporary_schema = TemporarySchema::new();
+    let store = temporary_schema.create_store();
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+
+    store
+        .append(vec![NewEvent::new(
+            "account-opened",
+            json!({ "accountId": "a-occurred-at" }),
+        )])
+        .expect("historical append should succeed");
+
+    let _stream = store
+        .stream_all_durable(
+            &DurableStream::new("occurred-at-replay"),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
+        .expect("durable replay should succeed");
+
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 1);
+    assert_eq!(batch_sequences(&delivered_batches), vec![vec![1]]);
+    assert_eq!(delivered_batches[0].len(), 1);
+    assert_eq!(delivered_batches[0][0].event_type, "account-opened");
+    assert_eq!(
+        delivered_batches[0][0].payload,
+        json!({ "accountId": "a-occurred-at" })
+    );
+    assert_ne!(
+        delivered_batches[0][0].occurred_at,
+        time::OffsetDateTime::UNIX_EPOCH
+    );
+}
+
+#[test]
 fn replay_setup_failure_does_not_strand_a_durable_stream() {
     let temporary_schema = TemporarySchema::new();
     let store = temporary_schema.create_store();

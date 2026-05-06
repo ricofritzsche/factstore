@@ -92,6 +92,7 @@ The current package surface includes:
 
 - `FactstrMemoryStore`
 - `FactstrSqliteStore`
+- `FactstrPostgresStore`
 - `append`
 - `query`
 - `appendIf`
@@ -102,7 +103,7 @@ The current package surface includes:
 
 Current boundaries:
 
-- PostgreSQL support is not exposed through Node.js yet
+- PostgreSQL requires a PostgreSQL database URL
 - transport behavior is not exposed
 
 See [Node and TypeScript](node-typescript.md) for the current package examples and boundaries.

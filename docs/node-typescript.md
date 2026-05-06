@@ -2,7 +2,7 @@
 
 `@factstr/factstr-node` is the current published Node and TypeScript package for FACTSTR.
 
-It provides Node.js bindings and TypeScript types for FACTSTR. The package exposes the Memory and SQLite stores from the Rust implementation without reimplementing FACTSTR semantics in TypeScript.
+It provides Node.js bindings and TypeScript types for FACTSTR. The package exposes the Memory, SQLite, and PostgreSQL stores from the Rust implementation without reimplementing FACTSTR semantics in TypeScript.
 
 ## Install
 
@@ -14,6 +14,7 @@ npm install @factstr/factstr-node
 
 - `FactstrMemoryStore`
 - `FactstrSqliteStore`
+- `FactstrPostgresStore`
 
 ## Current API
 
@@ -34,11 +35,13 @@ import {
   type EventQuery,
   type NewEvent,
   FactstrMemoryStore,
+  FactstrPostgresStore,
   FactstrSqliteStore,
 } from '@factstr/factstr-node';
 
 const memoryStore = new FactstrMemoryStore();
 const sqliteStore = new FactstrSqliteStore('./factstr.sqlite');
+const postgresStore = new FactstrPostgresStore(process.env.DATABASE_URL!);
 
 const event: NewEvent = {
   event_type: 'item-added',
@@ -47,6 +50,7 @@ const event: NewEvent = {
 
 memoryStore.append([event]);
 sqliteStore.append([event]);
+postgresStore.append([event]);
 
 const query: EventQuery = {
   filters: [
@@ -171,12 +175,12 @@ Sequence and context values use `bigint` so Rust `u64` meanings stay lossless in
 
 `occurred_at` is exposed as an RFC 3339 string on each returned event record.
 
-## Memory And SQLite Durability Boundary
+## Store Durability Boundary
 
 - `FactstrMemoryStore` keeps durable stream state only for the lifetime of one store instance.
 - `FactstrSqliteStore` persists facts and durable stream state in SQLite, so the same durable stream name can resume across reopening the same database path.
+- `FactstrPostgresStore` persists facts and durable stream state in PostgreSQL, so the same durable stream name can resume as long as the database state is retained.
 
 ## Not Included Yet
 
-- PostgreSQL support
 - transport behavior

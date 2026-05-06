@@ -100,8 +100,8 @@ function wrapStreamHandle(handle) {
 
   return (events) => {
     try {
-      handle(events);
-      return true;
+      const result = handle(events);
+      return result === false ? false : true;
     } catch (error) {
       console.error('factstr-node stream callback failed', error);
       return false;
@@ -189,8 +189,49 @@ class FactstrSqliteStore {
   }
 }
 
+class FactstrPostgresStore {
+  #nativeStore;
+
+  constructor(databaseUrl) {
+    this.#nativeStore = new nativeModule.FactstrPostgresStore(databaseUrl);
+  }
+
+  append(events) {
+    return this.#nativeStore.append(events);
+  }
+
+  query(query) {
+    return this.#nativeStore.query(query);
+  }
+
+  appendIf(events, query, expectedContextVersion) {
+    return this.#nativeStore.appendIf(events, query, expectedContextVersion);
+  }
+
+  streamAll(handle) {
+    return this.#nativeStore.streamAll(wrapStreamHandle(handle));
+  }
+
+  streamTo(query, handle) {
+    return this.#nativeStore.streamTo(query, wrapStreamHandle(handle));
+  }
+
+  streamAllDurable(durableStream, handle) {
+    return this.#nativeStore.streamAllDurable(durableStream, wrapStreamHandle(handle));
+  }
+
+  streamToDurable(durableStream, query, handle) {
+    return this.#nativeStore.streamToDurable(
+      durableStream,
+      query,
+      wrapStreamHandle(handle),
+    );
+  }
+}
+
 module.exports = {
   ...nativeModule,
   FactstrMemoryStore,
+  FactstrPostgresStore,
   FactstrSqliteStore,
 };

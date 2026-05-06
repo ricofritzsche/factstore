@@ -45,7 +45,7 @@ Memory and PostgreSQL stores are also available through `factstr-memory` and `fa
 npm install @factstr/factstr-node
 ```
 
-The Node.js bindings currently expose the Memory and SQLite stores. PostgreSQL support is not exposed through Node.js yet.
+The Node.js bindings currently expose the Memory, SQLite, and PostgreSQL stores. PostgreSQL requires a database URL.
 
 ## Start Here
 

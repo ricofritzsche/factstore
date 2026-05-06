@@ -857,7 +857,7 @@ async fn query_with_pool(
         .await?
         .into_iter()
         .map(event_record_from_row)
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
 
     let last_returned_sequence_number = event_records
         .last()
@@ -1046,13 +1046,13 @@ async fn current_context_version_in_transaction(
         .map(|sequence_number| sequence_number as u64))
 }
 
-fn event_record_from_row(row: PgRow) -> EventRecord {
-    EventRecord {
-        sequence_number: row.get::<i64, _>("sequence_number") as u64,
-        occurred_at: row.get("occurred_at"),
-        event_type: row.get("event_type"),
-        payload: row.get("payload"),
-    }
+fn event_record_from_row(row: PgRow) -> Result<EventRecord, sqlx::Error> {
+    Ok(EventRecord {
+        sequence_number: row.try_get::<i64, _>("sequence_number")? as u64,
+        occurred_at: row.try_get("occurred_at")?,
+        event_type: row.try_get("event_type")?,
+        payload: row.try_get("payload")?,
+    })
 }
 
 fn json_backend_failure(error: serde_json::Error) -> EventStoreError {
@@ -1236,7 +1236,7 @@ async fn load_replay_batches(
         let first_sequence_number = batch_row.get::<i64, _>("first_sequence_number") as u64;
         let last_sequence_number = batch_row.get::<i64, _>("last_sequence_number") as u64;
         let event_rows = sqlx::query(
-            "SELECT sequence_number, event_type, payload
+            "SELECT sequence_number, occurred_at, event_type, payload
              FROM events
              WHERE sequence_number >= $1 AND sequence_number <= $2
              ORDER BY sequence_number ASC",
@@ -1250,6 +1250,9 @@ async fn load_replay_batches(
         let delivered_batch = event_rows
             .into_iter()
             .map(event_record_from_row)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(PostgresStore::backend_failure)?
+            .into_iter()
             .filter(|event_record| matches_query(event_query, event_record))
             .collect::<Vec<_>>();
 

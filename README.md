@@ -56,7 +56,7 @@ npm install @factstr/factstr-node
 - live streams that deliver committed batches after persistence succeeds
 - durable streams that replay after a stored cursor and then continue live
 - Memory, SQLite, and PostgreSQL store implementations behind one Rust contract
-- Node.js bindings with TypeScript types for Memory and SQLite
+- Node.js bindings with TypeScript types for Memory, SQLite, and PostgreSQL
 
 ## Rust Crates
 
@@ -72,12 +72,13 @@ For normal Rust projects, install the contract crate plus one store crate.
 
 ## Node.js Bindings
 
-`@factstr/factstr-node` provides Node.js bindings and TypeScript types for FACTSTR. It exposes the Memory and SQLite stores from the Rust implementation without reimplementing FACTSTR semantics in TypeScript.
+`@factstr/factstr-node` provides Node.js bindings and TypeScript types for FACTSTR. It exposes the Memory, SQLite, and PostgreSQL stores from the Rust implementation without reimplementing FACTSTR semantics in TypeScript.
 
 Current package surface:
 
 - `FactstrMemoryStore`
 - `FactstrSqliteStore`
+- `FactstrPostgresStore`
 - `append`
 - `query`
 - `appendIf`
@@ -88,7 +89,7 @@ Current package surface:
 
 Current boundaries:
 
-- PostgreSQL support is not exposed through Node.js yet
+- PostgreSQL requires a database URL
 - transport behavior is not exposed
 
 ## Documentation

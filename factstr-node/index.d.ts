@@ -50,6 +50,8 @@ export declare class EventStreamSubscription {
   unsubscribe(): void;
 }
 
+export type EventStreamHandle = (events: EventRecord[]) => boolean | void;
+
 export declare class FactstrMemoryStore {
   constructor();
   append(events: NewEvent[]): AppendResult;
@@ -59,19 +61,44 @@ export declare class FactstrMemoryStore {
     query: EventQuery,
     expectedContextVersion?: bigint | null,
   ): AppendIfResult;
-  streamAll(handle: (events: EventRecord[]) => void): EventStreamSubscription;
+  streamAll(handle: EventStreamHandle): EventStreamSubscription;
   streamTo(
     query: EventQuery,
-    handle: (events: EventRecord[]) => void,
+    handle: EventStreamHandle,
   ): EventStreamSubscription;
   streamAllDurable(
     durableStream: DurableStream,
-    handle: (events: EventRecord[]) => void,
+    handle: EventStreamHandle,
   ): EventStreamSubscription;
   streamToDurable(
     durableStream: DurableStream,
     query: EventQuery,
-    handle: (events: EventRecord[]) => void,
+    handle: EventStreamHandle,
+  ): EventStreamSubscription;
+}
+
+export declare class FactstrPostgresStore {
+  constructor(databaseUrl: string);
+  append(events: NewEvent[]): AppendResult;
+  query(query: EventQuery): QueryResult;
+  appendIf(
+    events: NewEvent[],
+    query: EventQuery,
+    expectedContextVersion?: bigint | null,
+  ): AppendIfResult;
+  streamAll(handle: EventStreamHandle): EventStreamSubscription;
+  streamTo(
+    query: EventQuery,
+    handle: EventStreamHandle,
+  ): EventStreamSubscription;
+  streamAllDurable(
+    durableStream: DurableStream,
+    handle: EventStreamHandle,
+  ): EventStreamSubscription;
+  streamToDurable(
+    durableStream: DurableStream,
+    query: EventQuery,
+    handle: EventStreamHandle,
   ): EventStreamSubscription;
 }
 
@@ -84,18 +111,18 @@ export declare class FactstrSqliteStore {
     query: EventQuery,
     expectedContextVersion?: bigint | null,
   ): AppendIfResult;
-  streamAll(handle: (events: EventRecord[]) => void): EventStreamSubscription;
+  streamAll(handle: EventStreamHandle): EventStreamSubscription;
   streamTo(
     query: EventQuery,
-    handle: (events: EventRecord[]) => void,
+    handle: EventStreamHandle,
   ): EventStreamSubscription;
   streamAllDurable(
     durableStream: DurableStream,
-    handle: (events: EventRecord[]) => void,
+    handle: EventStreamHandle,
   ): EventStreamSubscription;
   streamToDurable(
     durableStream: DurableStream,
     query: EventQuery,
-    handle: (events: EventRecord[]) => void,
+    handle: EventStreamHandle,
   ): EventStreamSubscription;
 }

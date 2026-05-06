@@ -5,7 +5,8 @@ use serde_json::json;
 
 #[test]
 fn store_operations_are_safe_inside_a_running_tokio_runtime() {
-    let store = support::create_store();
+    let temporary_schema = support::TemporarySchema::new();
+    let store = temporary_schema.create_store();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

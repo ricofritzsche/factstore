@@ -1,9 +1,10 @@
 use std::env;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use factstr_postgres::PostgresStore;
 use sqlx::{Connection, Executor, PgConnection, Row};
+use time::OffsetDateTime;
+use time::macros::format_description;
 use url::Url;
 
 static NEXT_SCHEMA_ID: AtomicU64 = AtomicU64::new(1);
@@ -20,20 +21,15 @@ where
     }));
 }
 
-#[allow(dead_code)]
-pub(crate) fn create_store() -> PostgresStore {
-    TemporarySchema::new().create_store()
-}
-
 pub(crate) struct TemporarySchema {
+    base_database_url: String,
+    schema_name: String,
     store_database_url: String,
 }
 
 impl TemporarySchema {
     pub(crate) fn new() -> Self {
-        Self {
-            store_database_url: create_store_database_url(),
-        }
+        create_temporary_schema()
     }
 
     pub(crate) fn database_url(&self) -> &str {
@@ -42,6 +38,19 @@ impl TemporarySchema {
 
     pub(crate) fn create_store(&self) -> PostgresStore {
         PostgresStore::connect(&self.store_database_url).expect("postgres store should connect")
+    }
+}
+
+impl Drop for TemporarySchema {
+    fn drop(&mut self) {
+        admin_runtime().block_on(async {
+            let Ok(mut connection) = PgConnection::connect(&self.base_database_url).await else {
+                return;
+            };
+
+            let drop_statement = format!("DROP SCHEMA IF EXISTS \"{}\" CASCADE", self.schema_name);
+            let _ = connection.execute(drop_statement.as_str()).await;
+        });
     }
 }
 
@@ -115,16 +124,17 @@ fn database_url() -> String {
 }
 
 fn unique_schema_name() -> String {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time should move forward")
-        .as_nanos();
+    let timestamp = OffsetDateTime::now_utc()
+        .format(format_description!(
+            "[year]_[month]_[day]_[hour][minute][second]_[subsecond digits:6]_utc"
+        ))
+        .expect("timestamp should format");
     let next_id = NEXT_SCHEMA_ID.fetch_add(1, Ordering::Relaxed);
 
     format!("factstr_test_{timestamp}_{next_id}")
 }
 
-fn create_store_database_url() -> String {
+fn create_temporary_schema() -> TemporarySchema {
     let base_database_url = database_url();
     let schema_name = unique_schema_name();
     admin_runtime().block_on(async {
@@ -138,7 +148,11 @@ fn create_store_database_url() -> String {
             .expect("test schema should be created");
     });
 
-    schema_database_url(&base_database_url, &schema_name)
+    TemporarySchema {
+        store_database_url: schema_database_url(&base_database_url, &schema_name),
+        base_database_url,
+        schema_name,
+    }
 }
 
 fn admin_runtime() -> tokio::runtime::Runtime {

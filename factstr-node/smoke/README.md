@@ -7,6 +7,7 @@ The smoke suite proves:
 
 - `FactstrMemoryStore`
 - `FactstrSqliteStore`
+- `FactstrPostgresStore` when `FACTSTR_NODE_POSTGRES_DATABASE_URL` or `DATABASE_URL` is set
 - `append`
 - `query`
 - `appendIf` success and explicit conflict
@@ -18,10 +19,14 @@ The smoke suite proves:
 - `streamAllDurable`
 - `streamToDurable`
 - SQLite database creation and reopen
+- PostgreSQL append/query/appendIf/live streams/durable streams when a database URL is configured
 - direct-native durable callback failure behavior
 
 The smoke test intentionally registers failing callbacks. Callback failure logs are
 expected during the run.
+
+PostgreSQL smoke coverage is opt-in. When no PostgreSQL database URL is configured,
+the smoke suite prints a skip message and continues with the rest of the package verification.
 
 ## Install dependencies
 
