@@ -16,6 +16,7 @@ use sqlx::{
 };
 use time::OffsetDateTime;
 use tokio::runtime::Builder;
+use url::Url;
 
 use crate::query_match::matches_query;
 use crate::query_sql::push_query_conditions;
@@ -61,6 +62,12 @@ enum WorkerCommand {
 enum DeliveryCommand {
     Deliver(Vec<PendingDelivery>),
     Shutdown,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PostgresBootstrapOptions {
+    pub server_url: String,
+    pub database_name: String,
 }
 
 pub struct PostgresStore {
@@ -136,6 +143,12 @@ impl PostgresStore {
             delivery_sender,
             delivery_thread: Mutex::new(Some(delivery_thread)),
         })
+    }
+
+    pub fn bootstrap(options: PostgresBootstrapOptions) -> Result<Self, EventStoreError> {
+        bootstrap_database(&options)?;
+        let database_url = database_url_with_name(&options.server_url, &options.database_name)?;
+        Self::connect(&database_url).map_err(Self::backend_failure)
     }
 
     fn backend_failure(error: sqlx::Error) -> EventStoreError {
@@ -794,6 +807,162 @@ fn run_delivery_thread(
 
 fn sqlx_io_error(error: io::Error) -> sqlx::Error {
     sqlx::Error::Io(error)
+}
+
+fn backend_failure_message(message: impl Into<String>) -> EventStoreError {
+    EventStoreError::BackendFailure {
+        message: message.into(),
+    }
+}
+
+fn bootstrap_database(options: &PostgresBootstrapOptions) -> Result<(), EventStoreError> {
+    let options = options.clone();
+    let (result_sender, result_receiver) = mpsc::sync_channel(1);
+
+    let bootstrap_thread = thread::Builder::new()
+        .name("factstr-postgres-database-bootstrap".to_owned())
+        .spawn(move || {
+            let runtime = Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(sqlx_io_error)
+                .map_err(PostgresStore::backend_failure);
+
+            let result = match runtime {
+                Ok(runtime) => runtime.block_on(async move {
+                    ensure_database_exists(&options.server_url, &options.database_name).await
+                }),
+                Err(error) => Err(error),
+            };
+
+            let _ = result_sender.send(result);
+        })
+        .map_err(sqlx_io_error)
+        .map_err(PostgresStore::backend_failure)?;
+
+    let result = result_receiver.recv().map_err(|error| {
+        backend_failure_message(format!(
+            "postgres bootstrap database thread did not return a result: {error}"
+        ))
+    })?;
+
+    bootstrap_thread.join().map_err(|_| {
+        backend_failure_message("postgres bootstrap database thread panicked before completion")
+    })?;
+
+    result
+}
+
+async fn ensure_database_exists(
+    server_url: &str,
+    database_name: &str,
+) -> Result<(), EventStoreError> {
+    validate_bootstrap_database_name(database_name)?;
+    let _ = database_url_with_name(server_url, database_name)?;
+
+    let quoted_database_name = quote_postgres_identifier(database_name)?;
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(server_url)
+        .await
+        .map_err(|error| {
+            backend_failure_message(format!(
+                "postgres bootstrap could not connect to server_url {server_url:?}: {error}"
+            ))
+        })?;
+
+    let database_exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)",
+    )
+    .bind(database_name)
+    .fetch_one(&pool)
+    .await
+    .map_err(|error| {
+        backend_failure_message(format!(
+            "postgres bootstrap could not inspect database {database_name:?}: {error}"
+        ))
+    })?;
+
+    if database_exists {
+        return Ok(());
+    }
+
+    let create_database_sql = format!("CREATE DATABASE {quoted_database_name}");
+    match sqlx::query(&create_database_sql).execute(&pool).await {
+        Ok(_) => Ok(()),
+        Err(sqlx::Error::Database(database_error))
+            if database_error.code().as_deref() == Some("42P04") =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(backend_failure_message(format!(
+            "postgres bootstrap could not create database {database_name:?}: {error}"
+        ))),
+    }
+}
+
+fn quote_postgres_identifier(identifier: &str) -> Result<String, EventStoreError> {
+    if identifier.is_empty() {
+        return Err(backend_failure_message(
+            "postgres bootstrap database_name must not be empty",
+        ));
+    }
+
+    if identifier.contains('\0') {
+        return Err(backend_failure_message(
+            "postgres bootstrap database_name must not contain null bytes",
+        ));
+    }
+
+    Ok(format!("\"{}\"", identifier.replace('"', "\"\"")))
+}
+
+fn validate_bootstrap_database_name(database_name: &str) -> Result<(), EventStoreError> {
+    if database_name.is_empty() {
+        return Err(backend_failure_message(
+            "postgres bootstrap database_name must not be empty",
+        ));
+    }
+
+    if database_name.contains('\0') {
+        return Err(backend_failure_message(
+            "postgres bootstrap database_name must not contain null bytes",
+        ));
+    }
+
+    let mut characters = database_name.chars();
+    let Some(first_character) = characters.next() else {
+        return Err(backend_failure_message(
+            "postgres bootstrap database_name must not be empty",
+        ));
+    };
+
+    if !(first_character.is_ascii_alphabetic() || first_character == '_') {
+        return Err(backend_failure_message(
+            "postgres bootstrap database_name must match [A-Za-z_][A-Za-z0-9_]*",
+        ));
+    }
+
+    if !characters.all(|character| character.is_ascii_alphanumeric() || character == '_') {
+        return Err(backend_failure_message(
+            "postgres bootstrap database_name must match [A-Za-z_][A-Za-z0-9_]*",
+        ));
+    }
+
+    Ok(())
+}
+
+fn database_url_with_name(
+    server_url: &str,
+    database_name: &str,
+) -> Result<String, EventStoreError> {
+    let mut url = Url::parse(server_url).map_err(|error| {
+        backend_failure_message(format!(
+            "invalid postgres server_url {server_url:?}: {error}"
+        ))
+    })?;
+    url.set_path(&format!("/{database_name}"));
+    Ok(url.into())
 }
 
 fn bootstrap_connection(connection_string: &str) -> Result<(), sqlx::Error> {

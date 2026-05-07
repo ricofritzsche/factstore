@@ -34,6 +34,19 @@ Use `factstr-postgres` when:
 
 Integration tests for this crate require a PostgreSQL database.
 
+## Connection paths
+
+`factstr-postgres` exposes two explicit PostgreSQL setup paths:
+
+- `PostgresStore::connect(database_url)`: connect to an existing database, then initialize or validate the FACTSTR schema inside that database.
+- `PostgresStore::bootstrap(options)`: connect to an existing PostgreSQL server, create the target database if it is missing, derive the target database connection URL from `server_url + database_name`, then continue through the normal `connect` path.
+
+`connect` keeps production-style usage explicit: the database lifecycle stays outside the store, but FACTSTR schema setup stays local to `factstr-postgres`.
+
+`bootstrap` is intended for local development, examples, demos, and reference implementations that should start from an existing PostgreSQL server without requiring the client to create the target database first. The PostgreSQL server itself remains external, and the credentials in `server_url` still need permission to inspect `pg_database` and create the target database.
+
+Bootstrap intentionally supports only simple identifier-style database names that match `[A-Za-z_][A-Za-z0-9_]*`. Names with whitespace, punctuation, path-special characters, or other quoted PostgreSQL identifier forms are rejected before FACTSTR checks `pg_database`, creates the database, or derives the target connection URL.
+
 ## Add to `Cargo.toml`
 
 ```toml
@@ -61,6 +74,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let result = store.query(&EventQuery::all())?;
     assert_eq!(result.event_records.len(), 1);
+
+    Ok(())
+}
+```
+
+## Bootstrap example
+
+```rust
+use factstr::{EventQuery, EventStore};
+use factstr_postgres::{PostgresBootstrapOptions, PostgresStore};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let store = PostgresStore::bootstrap(PostgresBootstrapOptions {
+        server_url: "postgres://postgres:postgres@localhost:5432/postgres".to_owned(),
+        database_name: "factstr_demo".to_owned(),
+    })?;
+
+    let result = store.query(&EventQuery::all())?;
+    assert!(result.event_records.is_empty());
 
     Ok(())
 }

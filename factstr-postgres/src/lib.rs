@@ -4,4 +4,4 @@ mod query_match;
 mod query_sql;
 mod stream_registry;
 
-pub use postgres_store::PostgresStore;
+pub use postgres_store::{PostgresBootstrapOptions, PostgresStore};
