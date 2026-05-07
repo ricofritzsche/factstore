@@ -13,31 +13,31 @@ Core contract only:
 
 ```toml
 [dependencies]
-factstr = "0.4"
+factstr = "0.4.1"
 ```
 
 Memory store:
 
 ```toml
 [dependencies]
-factstr = "0.4"
-factstr-memory = "0.4"
+factstr = "0.4.1"
+factstr-memory = "0.4.1"
 ```
 
 SQLite store:
 
 ```toml
 [dependencies]
-factstr = "0.4"
-factstr-sqlite = "0.4"
+factstr = "0.4.1"
+factstr-sqlite = "0.4.1"
 ```
 
 PostgreSQL store:
 
 ```toml
 [dependencies]
-factstr = "0.4"
-factstr-postgres = "0.4"
+factstr = "0.4.1"
+factstr-postgres = "0.4.1"
 ```
 
 Choose a store based on how you want to run FACTSTR:

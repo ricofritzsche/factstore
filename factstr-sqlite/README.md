@@ -35,8 +35,8 @@ Use `factstr-sqlite` when:
 
 ```toml
 [dependencies]
-factstr = "0.4"
-factstr-sqlite = "0.4"
+factstr = "0.4.1"
+factstr-sqlite = "0.4.1"
 ```
 
 ## Minimal example

@@ -37,7 +37,7 @@ The core crate stays independent of those implementations.
 
 ```toml
 [dependencies]
-factstr = "0.4"
+factstr = "0.4.1"
 ```
 
 Use the GitHub repository when you want to work on FACTSTR itself or test unreleased changes before a crates.io release.

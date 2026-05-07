@@ -51,8 +51,8 @@ Bootstrap intentionally supports only simple identifier-style database names tha
 
 ```toml
 [dependencies]
-factstr = "0.4"
-factstr-postgres = "0.4"
+factstr = "0.4.1"
+factstr-postgres = "0.4.1"
 ```
 
 ## Minimal example

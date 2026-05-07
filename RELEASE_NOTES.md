@@ -9,3 +9,5 @@
 FACTSTR can create the target PostgreSQL database only through the explicit bootstrap path. FACTSTR still does not provision or run PostgreSQL itself. Bootstrap requires an existing PostgreSQL server and credentials with permission to inspect `pg_database` and create the target database.
 
 Bootstrap database names are intentionally limited to simple identifier-style names matching `[A-Za-z_][A-Za-z0-9_]*`.
+
+The Node/TypeScript binding now exposes the same explicit PostgreSQL bootstrap path through `FactstrPostgresStore.bootstrap({ serverUrl, databaseName })`, while keeping `new FactstrPostgresStore(databaseUrl)` unchanged for the existing-database path.

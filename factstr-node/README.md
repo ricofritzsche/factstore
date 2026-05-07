@@ -7,6 +7,7 @@ It exposes the Memory, SQLite, and PostgreSQL stores from the Rust implementatio
 - `FactstrMemoryStore`
 - `FactstrSqliteStore`
 - `FactstrPostgresStore`
+- `FactstrPostgresStore.bootstrap`
 - `append`
 - `query`
 - `appendIf`
@@ -35,7 +36,12 @@ Not included yet:
 npm install @factstr/factstr-node
 ```
 
-SQLite and PostgreSQL support are included in the same package. `FactstrMemoryStore` is memory-backed, `FactstrSqliteStore` is SQLite-backed and persistent, and `FactstrPostgresStore` connects to PostgreSQL through a database URL.
+SQLite and PostgreSQL support are included in the same package. `FactstrMemoryStore` is memory-backed, `FactstrSqliteStore` is SQLite-backed and persistent, and `FactstrPostgresStore` supports two explicit PostgreSQL paths:
+
+- `new FactstrPostgresStore(databaseUrl)`: the target PostgreSQL database already exists, and FACTSTR initializes or validates the schema it owns inside that database.
+- `FactstrPostgresStore.bootstrap({ serverUrl, databaseName })`: FACTSTR starts from an existing PostgreSQL server connection, creates the target database when missing, and then returns a ready store through the normal PostgreSQL connect path.
+
+Bootstrap still requires an existing PostgreSQL server. FACTSTR does not provision or run PostgreSQL itself, and the configured credentials must have permission to inspect `pg_database` and create the target database. Bootstrap database names are intentionally limited to `[A-Za-z_][A-Za-z0-9_]*`.
 
 ## Supported Platforms
 
@@ -61,6 +67,10 @@ import {
 const memoryStore = new FactstrMemoryStore();
 const sqliteStore = new FactstrSqliteStore('./factstr.sqlite');
 const postgresStore = new FactstrPostgresStore(process.env.DATABASE_URL!);
+const bootstrappedPostgresStore = FactstrPostgresStore.bootstrap({
+  serverUrl: 'postgres://postgres:postgres@localhost:5432/postgres',
+  databaseName: 'factstr_demo',
+});
 
 const event: NewEvent = {
   event_type: 'item-added',
@@ -70,6 +80,7 @@ const event: NewEvent = {
 memoryStore.append([event]);
 sqliteStore.append([event]);
 postgresStore.append([event]);
+bootstrappedPostgresStore.append([event]);
 
 const query: EventQuery = {
   filters: [
@@ -212,7 +223,11 @@ Sequence and context values are exposed as `bigint` so FACTSTR's Rust `u64` mean
 
 `FactstrSqliteStore` is SQLite-backed and persistent at the database path you pass to the constructor.
 
-`FactstrPostgresStore` is PostgreSQL-backed and connects through the database URL you pass to the constructor.
+`FactstrPostgresStore` is PostgreSQL-backed.
+
+Use the constructor when the target database already exists.
+
+Use `FactstrPostgresStore.bootstrap({ serverUrl, databaseName })` when an existing PostgreSQL server should create the target database first. Bootstrap database names must match `[A-Za-z_][A-Za-z0-9_]*`.
 
 All three Node.js store bindings expose `append`, `query`, `appendIf`, `streamAll`, `streamTo`, `streamAllDurable`, and `streamToDurable`.
 

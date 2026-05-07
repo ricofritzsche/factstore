@@ -192,8 +192,19 @@ class FactstrSqliteStore {
 class FactstrPostgresStore {
   #nativeStore;
 
-  constructor(databaseUrl) {
-    this.#nativeStore = new nativeModule.FactstrPostgresStore(databaseUrl);
+  constructor(databaseUrl, nativeStore = null) {
+    this.#nativeStore =
+      nativeStore ?? new nativeModule.FactstrPostgresStore(databaseUrl);
+  }
+
+  static bootstrap(options) {
+    return new FactstrPostgresStore(
+      null,
+      nativeModule.FactstrPostgresStore.bootstrap({
+        serverUrl: options.serverUrl,
+        databaseName: options.databaseName,
+      }),
+    );
   }
 
   append(events) {

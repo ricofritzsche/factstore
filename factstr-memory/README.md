@@ -35,8 +35,8 @@ Use `factstr-memory` when:
 
 ```toml
 [dependencies]
-factstr = "0.4"
-factstr-memory = "0.4"
+factstr = "0.4.1"
+factstr-memory = "0.4.1"
 ```
 
 ## Minimal example

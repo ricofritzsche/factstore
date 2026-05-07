@@ -14,7 +14,7 @@ pub use append_if_outcome::AppendIfResult;
 pub use durable_stream::DurableStream;
 pub use event_stream_subscription::EventStreamSubscription;
 pub use factstr_memory_store::FactstrMemoryStore;
-pub use factstr_postgres_store::FactstrPostgresStore;
+pub use factstr_postgres_store::{FactstrPostgresBootstrapOptions, FactstrPostgresStore};
 pub use factstr_sqlite_store::FactstrSqliteStore;
 pub use node_request::{EventFilter, EventQuery, NewEvent};
 pub use node_result::{AppendResult, ConditionalAppendConflict, EventRecord, QueryResult};

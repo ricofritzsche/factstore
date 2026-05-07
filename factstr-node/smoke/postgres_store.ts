@@ -16,8 +16,14 @@ function postgresDatabaseUrl(): string | null {
   return env.FACTSTR_NODE_POSTGRES_DATABASE_URL ?? env.DATABASE_URL ?? null;
 }
 
+function postgresServerUrl(databaseUrl: string): string {
+  const url = new URL(databaseUrl);
+  url.pathname = '/postgres';
+  return url.toString();
+}
+
 function uniquePostgresSmokeId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
 function batchContainsEvent(
@@ -359,4 +365,116 @@ export async function runPostgresStoreSmoke(): Promise<void> {
     'postgres durable filtered future delivery should still return only matching facts',
   );
   durableFilteredSubscription.unsubscribe();
+
+  const bootstrapAccountId = uniquePostgresSmokeId('postgres_bootstrap_account');
+  const bootstrapDatabaseName = uniquePostgresSmokeId('postgres_bootstrap');
+  const bootstrappedStore = FactstrPostgresStore.bootstrap({
+    serverUrl: postgresServerUrl(databaseUrl),
+    databaseName: bootstrapDatabaseName,
+  });
+
+  const bootstrappedOpenResult = bootstrappedStore.append([
+    {
+      event_type: 'account-opened',
+      payload: { accountId: bootstrapAccountId, owner: 'Bootstrap' },
+    },
+  ]);
+  assert(
+    bootstrappedOpenResult.first_sequence_number === 1n,
+    'postgres bootstrap should create a fresh database with sequence 1',
+  );
+
+  const bootstrappedQuery = bootstrappedStore.query({
+    filters: [
+      {
+        event_types: ['account-opened'],
+        payload_predicates: [{ accountId: bootstrapAccountId }],
+      },
+    ],
+  });
+  assert(
+    bootstrappedQuery.event_records.length === 1,
+    'postgres bootstrap should allow query after creating the database',
+  );
+
+  const bootstrappedAppendIf = bootstrappedStore.appendIf(
+    [
+      {
+        event_type: 'account-tagged',
+        payload: { accountId: bootstrapAccountId, tag: 'bootstrapped' },
+      },
+    ],
+    {
+      filters: [
+        {
+          event_types: ['account-opened'],
+          payload_predicates: [{ accountId: bootstrapAccountId }],
+        },
+      ],
+    },
+    bootstrappedQuery.current_context_version,
+  );
+  assert(
+    bootstrappedAppendIf.append_result != null,
+    'postgres bootstrap should allow appendIf after creating the database',
+  );
+
+  const bootstrappedDurableBatches: EventRecord[][] = [];
+  const bootstrappedDurableSubscription = bootstrappedStore.streamAllDurable(
+    { name: uniquePostgresSmokeId('postgres_bootstrap_durable') },
+    (events: EventRecord[]) => {
+      bootstrappedDurableBatches.push(events);
+    },
+  );
+  await waitForCondition(
+    'postgres bootstrap durable replay',
+    () =>
+      batchContainsEvent(
+        bootstrappedDurableBatches,
+        (eventRecord) =>
+          eventRecord.event_type === 'account-opened'
+          && (eventRecord.payload as { accountId?: string }).accountId === bootstrapAccountId,
+      ),
+  );
+  bootstrappedDurableSubscription.unsubscribe();
+
+  const bootstrappedStoreAgain = FactstrPostgresStore.bootstrap({
+    serverUrl: postgresServerUrl(databaseUrl),
+    databaseName: bootstrapDatabaseName,
+  });
+  const bootstrappedQueryAgain = bootstrappedStoreAgain.query({
+    filters: [
+      {
+        event_types: ['account-opened'],
+        payload_predicates: [{ accountId: bootstrapAccountId }],
+      },
+    ],
+  });
+  assert(
+    bootstrappedQueryAgain.event_records.length === 1,
+    'postgres bootstrap should be idempotent when the database already exists',
+  );
+
+  for (const invalidDatabaseName of [
+    'factstr/demo',
+    'factstr?demo',
+    'factstr#demo',
+    'factstr demo',
+    '1factstr',
+  ]) {
+    let errorMessage = '';
+    try {
+      FactstrPostgresStore.bootstrap({
+        serverUrl: postgresServerUrl(databaseUrl),
+        databaseName: invalidDatabaseName,
+      });
+    } catch (error) {
+      errorMessage = String(error);
+    }
+
+    assert(
+      errorMessage.includes('[A-Za-z_][A-Za-z0-9_]*'),
+      `postgres bootstrap should reject invalid database name ${invalidDatabaseName}`,
+    );
+  }
 }

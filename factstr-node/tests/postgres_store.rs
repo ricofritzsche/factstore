@@ -5,9 +5,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use factstr_node::{EventFilter, EventQuery, FactstrPostgresStore, NewEvent};
+use factstr_node::{
+    EventFilter, EventQuery, FactstrPostgresBootstrapOptions, FactstrPostgresStore, NewEvent,
+};
 use napi::bindgen_prelude::BigInt;
 use serde_json::json;
+use url::Url;
 
 fn bigint_to_u64(value: &BigInt) -> u64 {
     let (sign_bit, unsigned_value, lossless) = value.get_u64();
@@ -22,6 +25,12 @@ fn option_bigint_to_u64(value: &Option<BigInt>) -> Option<u64> {
 
 fn postgres_database_url() -> Option<String> {
     env::var("DATABASE_URL").ok()
+}
+
+fn postgres_server_url(database_url: &str) -> String {
+    let mut url = Url::parse(database_url).expect("DATABASE_URL should be a valid URL");
+    url.set_path("/postgres");
+    url.into()
 }
 
 fn run_postgres_node_smoke_suite(database_url: &str) {
@@ -97,6 +106,19 @@ fn unique_postgres_account_id() -> String {
 
     format!(
         "factstr-node-postgres-{}-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos(),
+        NEXT_ID.fetch_add(1, Ordering::Relaxed),
+    )
+}
+
+fn unique_postgres_database_name() -> String {
+    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+
+    format!(
+        "factstr_node_bootstrap_{}_{}",
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time should move forward")
@@ -192,4 +214,92 @@ fn postgres_stream_bindings_match_the_smoke_contract() {
     };
 
     run_postgres_node_smoke_suite(&database_url);
+}
+
+#[test]
+fn bootstrap_rejects_invalid_database_names_before_connecting() {
+    for invalid_database_name in [
+        "factstr/demo",
+        "factstr?demo",
+        "factstr#demo",
+        "factstr demo",
+        "1factstr",
+    ] {
+        let bootstrap_result = FactstrPostgresStore::bootstrap(FactstrPostgresBootstrapOptions {
+            server_url: "postgres://postgres:postgres@localhost:5432/postgres".to_owned(),
+            database_name: invalid_database_name.to_owned(),
+        });
+
+        let error = match bootstrap_result {
+            Ok(_) => panic!("invalid bootstrap database names should fail"),
+            Err(error) => error,
+        };
+
+        let message = error.to_string();
+        assert!(
+            message.contains("[A-Za-z_][A-Za-z0-9_]*"),
+            "unexpected bootstrap validation error: {message}",
+        );
+    }
+}
+
+#[test]
+fn bootstrap_creates_a_missing_database_and_supports_the_existing_postgres_binding_surface() {
+    let Some(database_url) = postgres_database_url() else {
+        eprintln!(
+            "Skipping factstr-node postgres bootstrap binding test: DATABASE_URL is not set."
+        );
+        return;
+    };
+
+    let account_id = unique_postgres_account_id();
+    let database_name = unique_postgres_database_name();
+    let store = FactstrPostgresStore::bootstrap(FactstrPostgresBootstrapOptions {
+        server_url: postgres_server_url(&database_url),
+        database_name: database_name.clone(),
+    })
+    .expect("bootstrap should create the missing database");
+
+    let append_result = store
+        .append(vec![NewEvent {
+            event_type: "account-opened".to_owned(),
+            payload: json!({ "accountId": account_id, "owner": "Rico" }),
+        }])
+        .expect("append should succeed after bootstrap");
+    assert_eq!(bigint_to_u64(&append_result.first_sequence_number), 1);
+
+    let context_query = EventQuery {
+        filters: Some(vec![EventFilter {
+            event_types: Some(vec!["account-opened".to_owned()]),
+            payload_predicates: Some(vec![json!({ "accountId": account_id })]),
+        }]),
+        min_sequence_number: None,
+    };
+
+    let query_result = store
+        .query(context_query.clone())
+        .expect("query should succeed after bootstrap");
+    assert_eq!(query_result.event_records.len(), 1);
+
+    let append_if_result = store
+        .append_if(
+            vec![NewEvent {
+                event_type: "account-tagged".to_owned(),
+                payload: json!({ "accountId": account_id, "tag": "vip" }),
+            }],
+            context_query.clone(),
+            query_result.current_context_version.clone(),
+        )
+        .expect("append_if should succeed after bootstrap");
+    assert!(append_if_result.append_result.is_some());
+
+    let reopened_store = FactstrPostgresStore::bootstrap(FactstrPostgresBootstrapOptions {
+        server_url: postgres_server_url(&database_url),
+        database_name,
+    })
+    .expect("bootstrap should be idempotent when the database already exists");
+    let reopened_query = reopened_store
+        .query(context_query)
+        .expect("query should succeed after idempotent bootstrap");
+    assert_eq!(reopened_query.event_records.len(), 1);
 }

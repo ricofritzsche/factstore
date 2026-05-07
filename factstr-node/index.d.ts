@@ -46,6 +46,11 @@ export interface DurableStream {
   name: string;
 }
 
+export interface FactstrPostgresBootstrapOptions {
+  serverUrl: string;
+  databaseName: string;
+}
+
 export declare class EventStreamSubscription {
   unsubscribe(): void;
 }
@@ -79,6 +84,9 @@ export declare class FactstrMemoryStore {
 
 export declare class FactstrPostgresStore {
   constructor(databaseUrl: string);
+  static bootstrap(
+    options: FactstrPostgresBootstrapOptions,
+  ): FactstrPostgresStore;
   append(events: NewEvent[]): AppendResult;
   query(query: EventQuery): QueryResult;
   appendIf(

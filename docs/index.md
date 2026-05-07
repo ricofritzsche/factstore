@@ -33,8 +33,8 @@ Use FACTSTR when you want:
 
 ```toml
 [dependencies]
-factstr = "0.4"
-factstr-sqlite = "0.4"
+factstr = "0.4.1"
+factstr-sqlite = "0.4.1"
 ```
 
 Memory and PostgreSQL stores are also available through `factstr-memory` and `factstr-postgres`.

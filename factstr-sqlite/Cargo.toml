@@ -1,6 +1,6 @@
 [package]
 name = "factstr-sqlite"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 rust-version = "1.85"
 description = "Embedded SQLite store for FACTSTR with append, query, streams, and durable streams."
@@ -15,7 +15,7 @@ categories = ["database-implementations"]
 path = "src/lib.rs"
 
 [dependencies]
-factstr = { version = "0.4.0", path = "../factstr" }
+factstr = { version = "0.4.1", path = "../factstr" }
 serde_json = "1"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }

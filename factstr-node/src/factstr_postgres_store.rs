@@ -5,11 +5,29 @@ use crate::{
     stream_error::napi_error_from_event_store_error,
 };
 use factstr::{EventStore, EventStoreError};
-use factstr_postgres::PostgresStore;
+use factstr_postgres::{PostgresBootstrapOptions as RustPostgresBootstrapOptions, PostgresStore};
 use napi::bindgen_prelude::BigInt;
 use napi::bindgen_prelude::Result;
 use napi::{Env, JsFunction};
 use napi_derive::napi;
+
+#[napi(object)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FactstrPostgresBootstrapOptions {
+    #[napi(js_name = "serverUrl")]
+    pub server_url: String,
+    #[napi(js_name = "databaseName")]
+    pub database_name: String,
+}
+
+impl FactstrPostgresBootstrapOptions {
+    fn into_rust(self) -> RustPostgresBootstrapOptions {
+        RustPostgresBootstrapOptions {
+            server_url: self.server_url,
+            database_name: self.database_name,
+        }
+    }
+}
 
 #[napi]
 pub struct FactstrPostgresStore {
@@ -25,6 +43,14 @@ impl FactstrPostgresStore {
                 message: error.to_string(),
             })
         })?;
+
+        Ok(Self { postgres_store })
+    }
+
+    #[napi(factory)]
+    pub fn bootstrap(options: FactstrPostgresBootstrapOptions) -> Result<Self> {
+        let postgres_store = PostgresStore::bootstrap(options.into_rust())
+            .map_err(napi_error_from_event_store_error)?;
 
         Ok(Self { postgres_store })
     }
