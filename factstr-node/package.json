@@ -5,6 +5,10 @@
   "main": "index.js",
   "types": "index.d.ts",
   "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ricofritzsche/factstr"
+  },
   "files": [
     "README.md",
     "index.js",
