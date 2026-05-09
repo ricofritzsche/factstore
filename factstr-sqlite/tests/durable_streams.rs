@@ -100,7 +100,7 @@ fn durable_cursor_is_persisted_and_reopen_resumes_after_the_stored_cursor() {
 
     let first_batches = wait_for_delivery_count(&first_delivery_log, 1);
     assert_eq!(batch_sequences(&first_batches), vec![vec![1, 2]]);
-    assert_eq!(read_cursor(database_file.path(), "account-directory").1, 2);
+    assert_cursor_reaches(database_file.path(), "account-directory", 2);
 
     first_subscription.unsubscribe();
     drop(first_store);
@@ -126,7 +126,7 @@ fn durable_cursor_is_persisted_and_reopen_resumes_after_the_stored_cursor() {
 
     let reopened_batches = wait_for_delivery_count(&reopened_delivery_log, 1);
     assert_eq!(batch_sequences(&reopened_batches), vec![vec![3]]);
-    assert_eq!(read_cursor(database_file.path(), "account-directory").1, 3);
+    assert_cursor_reaches(database_file.path(), "account-directory", 3);
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn replay_setup_failure_does_not_strand_a_durable_subscriber() {
 
     let delivered_batches = wait_for_delivery_count(&recovery_log, 1);
     assert_eq!(batch_sequences(&delivered_batches), vec![vec![1]]);
-    assert_eq!(read_cursor(database_file.path(), "setup-failure").1, 1);
+    assert_cursor_reaches(database_file.path(), "setup-failure", 1);
 }
 
 #[test]
@@ -287,6 +287,24 @@ fn read_cursor(database_path: &std::path::Path, subscriber_id: &str) -> (String,
             .await
             .expect("subscriber cursor should exist")
     })
+}
+
+fn assert_cursor_reaches(database_path: &std::path::Path, subscriber_id: &str, expected: u64) {
+    let deadline = Instant::now() + Duration::from_secs(1);
+
+    loop {
+        let (_, actual) = read_cursor(database_path, subscriber_id);
+        if actual == expected {
+            return;
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "expected subscriber cursor {subscriber_id} to reach {expected}, got {actual}"
+        );
+
+        thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn insert_append_batch(
