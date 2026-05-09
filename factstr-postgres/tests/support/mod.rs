@@ -163,6 +163,62 @@ pub(crate) fn insert_append_batch(
     });
 }
 
+#[allow(dead_code)]
+pub(crate) fn append_batch_rows(store_database_url: &str) -> Vec<(u64, u64)> {
+    admin_runtime().block_on(async {
+        let mut connection = PgConnection::connect(store_database_url)
+            .await
+            .expect("postgres test connection should succeed");
+
+        sqlx::query(
+            "SELECT first_sequence_number, last_sequence_number
+             FROM append_batches
+             ORDER BY first_sequence_number ASC",
+        )
+        .fetch_all(&mut connection)
+        .await
+        .expect("append batch lookup should succeed")
+        .into_iter()
+        .map(|row| {
+            (
+                row.get::<i64, _>("first_sequence_number") as u64,
+                row.get::<i64, _>("last_sequence_number") as u64,
+            )
+        })
+        .collect()
+    })
+}
+
+#[allow(dead_code)]
+pub(crate) fn metadata_value(store_database_url: &str, key: &str) -> Option<String> {
+    admin_runtime().block_on(async {
+        let mut connection = PgConnection::connect(store_database_url)
+            .await
+            .expect("postgres test connection should succeed");
+
+        sqlx::query_scalar::<_, String>("SELECT value FROM store_metadata WHERE key = $1")
+            .bind(key)
+            .fetch_optional(&mut connection)
+            .await
+            .expect("store metadata lookup should succeed")
+    })
+}
+
+#[allow(dead_code)]
+pub(crate) fn delete_metadata_key(store_database_url: &str, key: &str) {
+    admin_runtime().block_on(async {
+        let mut connection = PgConnection::connect(store_database_url)
+            .await
+            .expect("postgres test connection should succeed");
+
+        sqlx::query("DELETE FROM store_metadata WHERE key = $1")
+            .bind(key)
+            .execute(&mut connection)
+            .await
+            .expect("store metadata delete should succeed");
+    });
+}
+
 fn database_url() -> String {
     env::var("DATABASE_URL")
         .expect("DATABASE_URL must be set to run factstr-postgres integration tests")

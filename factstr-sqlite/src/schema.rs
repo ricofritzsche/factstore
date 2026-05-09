@@ -1,8 +1,17 @@
 use sqlx::SqlitePool;
 
 pub(crate) const STORE_FORMAT_VERSION: &str = "1";
+pub(crate) const APPEND_BATCH_BOUNDARY_FORMAT_KEY: &str = "append_batch_boundary_format";
+pub(crate) const APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1: &str = "sparse_v1";
 
 pub(crate) async fn initialize_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let is_new_database = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'events'",
+    )
+    .fetch_one(pool)
+    .await?
+        == 0;
+
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS events (
             sequence_number INTEGER PRIMARY KEY,
@@ -58,6 +67,17 @@ pub(crate) async fn initialize_schema(pool: &SqlitePool) -> Result<(), sqlx::Err
     .bind(STORE_FORMAT_VERSION)
     .execute(pool)
     .await?;
+
+    if is_new_database {
+        sqlx::query(
+            "INSERT INTO store_metadata (key, value)
+             VALUES (?1, ?2)",
+        )
+        .bind(APPEND_BATCH_BOUNDARY_FORMAT_KEY)
+        .bind(APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1)
+        .execute(pool)
+        .await?;
+    }
 
     Ok(())
 }

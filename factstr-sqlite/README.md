@@ -28,8 +28,8 @@ Use `factstr-sqlite` when:
 
 - Committed facts are stored in SQLite.
 - Durable stream cursors are stored in SQLite and survive restart.
-- Durable replay depends on persisted append-batch history.
-- Older databases without contiguous append-batch history are rejected for durable replay instead of being silently backfilled.
+- `append_batches` rows are stored only for committed multi-event appends.
+- Durable replay treats a missing `append_batches` row as a single-event committed append.
 
 ## Add to `Cargo.toml`
 

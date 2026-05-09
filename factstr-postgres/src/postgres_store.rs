@@ -23,6 +23,10 @@ use crate::query_match::matches_query;
 use crate::query_sql::push_query_conditions;
 use crate::stream_registry::{DeliveryOutcome, PendingDelivery, SubscriptionRegistry};
 
+const STORE_FORMAT_VERSION: &str = "1";
+const APPEND_BATCH_BOUNDARY_FORMAT_KEY: &str = "append_batch_boundary_format";
+const APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1: &str = "sparse_v1";
+
 #[derive(Clone, Debug)]
 struct CommittedAppend {
     append_result: AppendResult,
@@ -33,6 +37,12 @@ struct CommittedAppend {
 struct ReplayBatch {
     last_processed_sequence_number: u64,
     delivered_batch: Vec<EventRecord>,
+}
+
+#[derive(Clone, Debug)]
+struct AppendBatchBoundary {
+    first_sequence_number: u64,
+    last_sequence_number: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -1094,6 +1104,13 @@ async fn append_if_with_pool(
 }
 
 async fn initialize_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let is_new_schema = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT to_regclass(current_schema() || '.events')::text",
+    )
+    .fetch_one(pool)
+    .await?
+    .is_none();
+
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS events (
             sequence_number BIGINT PRIMARY KEY,
@@ -1109,6 +1126,15 @@ async fn initialize_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
         "CREATE TABLE IF NOT EXISTS append_batches (
             first_sequence_number BIGINT PRIMARY KEY,
             last_sequence_number BIGINT NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS store_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
         )",
     )
     .execute(pool)
@@ -1135,6 +1161,26 @@ async fn initialize_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_events_payload_gin ON events USING gin(payload)")
         .execute(pool)
         .await?;
+
+    sqlx::query(
+        "INSERT INTO store_metadata (key, value)
+         VALUES ('store_format_version', $1)
+         ON CONFLICT(key) DO NOTHING",
+    )
+    .bind(STORE_FORMAT_VERSION)
+    .execute(pool)
+    .await?;
+
+    if is_new_schema {
+        sqlx::query(
+            "INSERT INTO store_metadata (key, value)
+             VALUES ($1, $2)",
+        )
+        .bind(APPEND_BATCH_BOUNDARY_FORMAT_KEY)
+        .bind(APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1)
+        .execute(pool)
+        .await?;
+    }
 
     Ok(())
 }
@@ -1183,14 +1229,16 @@ async fn append_records(
         .await?;
     }
 
-    sqlx::query(
-        "INSERT INTO append_batches (first_sequence_number, last_sequence_number)
-         VALUES ($1, $2)",
-    )
-    .bind(first_sequence_number as i64)
-    .bind(last_sequence_number as i64)
-    .execute(transaction.as_mut())
-    .await?;
+    if first_sequence_number != last_sequence_number {
+        sqlx::query(
+            "INSERT INTO append_batches (first_sequence_number, last_sequence_number)
+             VALUES ($1, $2)",
+        )
+        .bind(first_sequence_number as i64)
+        .bind(last_sequence_number as i64)
+        .execute(transaction.as_mut())
+        .await?;
+    }
 
     Ok(CommittedAppend {
         append_result: AppendResult {
@@ -1312,51 +1360,21 @@ async fn current_max_sequence_number_in_transaction(
 
 async fn ensure_replay_history_is_available(
     connection: &mut sqlx::PgConnection,
-    current_max_sequence_number: u64,
+    _current_max_sequence_number: u64,
 ) -> Result<(), EventStoreError> {
-    if current_max_sequence_number == 0 {
-        return Ok(());
-    }
+    let boundary_format =
+        sqlx::query_scalar::<_, Option<String>>("SELECT value FROM store_metadata WHERE key = $1")
+            .bind(APPEND_BATCH_BOUNDARY_FORMAT_KEY)
+            .fetch_optional(&mut *connection)
+            .await
+            .map_err(PostgresStore::backend_failure)?;
 
-    let batch_rows = sqlx::query(
-        "SELECT first_sequence_number, last_sequence_number
-         FROM append_batches
-         ORDER BY first_sequence_number ASC",
-    )
-    .fetch_all(&mut *connection)
-    .await
-    .map_err(PostgresStore::backend_failure)?;
-
-    if batch_rows.is_empty() {
+    if boundary_format.flatten().as_deref() != Some(APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1) {
         return Err(EventStoreError::BackendFailure {
-            message: "durable replay requires append_batches history for all persisted events"
-                .to_owned(),
-        });
-    }
-
-    let mut expected_first_sequence_number = 1_u64;
-
-    for batch_row in batch_rows {
-        let first_sequence_number = batch_row.get::<i64, _>("first_sequence_number") as u64;
-        let last_sequence_number = batch_row.get::<i64, _>("last_sequence_number") as u64;
-
-        if first_sequence_number != expected_first_sequence_number
-            || last_sequence_number < first_sequence_number
-        {
-            return Err(EventStoreError::BackendFailure {
-                message:
-                    "durable replay requires contiguous append_batches history for all persisted events"
-                        .to_owned(),
-            });
-        }
-
-        expected_first_sequence_number = last_sequence_number + 1;
-    }
-
-    if expected_first_sequence_number - 1 != current_max_sequence_number {
-        return Err(EventStoreError::BackendFailure {
-            message: "durable replay requires append_batches history for all persisted events"
-                .to_owned(),
+            message: format!(
+                "durable replay requires store_metadata {}={}",
+                APPEND_BATCH_BOUNDARY_FORMAT_KEY, APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1
+            ),
         });
     }
 
@@ -1416,39 +1434,97 @@ async fn load_replay_batches(
     .await
     .map_err(PostgresStore::backend_failure)?;
 
+    let append_batch_boundaries = batch_rows
+        .into_iter()
+        .map(|batch_row| AppendBatchBoundary {
+            first_sequence_number: batch_row.get::<i64, _>("first_sequence_number") as u64,
+            last_sequence_number: batch_row.get::<i64, _>("last_sequence_number") as u64,
+        })
+        .collect::<Vec<_>>();
+    let event_records = sqlx::query(
+        "SELECT sequence_number, occurred_at, event_type, payload
+         FROM events
+         WHERE sequence_number > $1
+           AND sequence_number <= $2
+         ORDER BY sequence_number ASC",
+    )
+    .bind(last_processed_sequence_number as i64)
+    .bind(replay_until_sequence_number as i64)
+    .fetch_all(pool)
+    .await
+    .map_err(PostgresStore::backend_failure)?
+    .into_iter()
+    .map(event_record_from_row)
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(PostgresStore::backend_failure)?;
+
+    Ok(replay_batches_from_records(
+        event_query,
+        event_records,
+        &append_batch_boundaries,
+    ))
+}
+
+fn replay_batches_from_records(
+    event_query: &EventQuery,
+    event_records: Vec<EventRecord>,
+    append_batch_boundaries: &[AppendBatchBoundary],
+) -> Vec<ReplayBatch> {
     let mut replay_batches = Vec::new();
+    let mut event_index = 0;
+    let mut boundary_index = 0;
 
-    for batch_row in batch_rows {
-        let first_sequence_number = batch_row.get::<i64, _>("first_sequence_number") as u64;
-        let last_sequence_number = batch_row.get::<i64, _>("last_sequence_number") as u64;
-        let event_rows = sqlx::query(
-            "SELECT sequence_number, occurred_at, event_type, payload
-             FROM events
-             WHERE sequence_number >= $1 AND sequence_number <= $2
-             ORDER BY sequence_number ASC",
-        )
-        .bind(first_sequence_number as i64)
-        .bind(last_sequence_number as i64)
-        .fetch_all(pool)
-        .await
-        .map_err(PostgresStore::backend_failure)?;
+    while event_index < event_records.len() {
+        let next_sequence_number = event_records[event_index].sequence_number;
 
-        let delivered_batch = event_rows
-            .into_iter()
-            .map(event_record_from_row)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(PostgresStore::backend_failure)?
-            .into_iter()
-            .filter(|event_record| matches_query(event_query, event_record))
-            .collect::<Vec<_>>();
+        while boundary_index < append_batch_boundaries.len()
+            && append_batch_boundaries[boundary_index].last_sequence_number < next_sequence_number
+        {
+            boundary_index += 1;
+        }
+
+        if boundary_index < append_batch_boundaries.len() {
+            let boundary = &append_batch_boundaries[boundary_index];
+            if boundary.first_sequence_number <= next_sequence_number
+                && next_sequence_number <= boundary.last_sequence_number
+            {
+                let batch_start = event_index;
+                while event_index < event_records.len()
+                    && event_records[event_index].sequence_number <= boundary.last_sequence_number
+                {
+                    event_index += 1;
+                }
+
+                let delivered_batch = event_records[batch_start..event_index]
+                    .iter()
+                    .filter(|event_record| matches_query(event_query, event_record))
+                    .cloned()
+                    .collect();
+
+                replay_batches.push(ReplayBatch {
+                    last_processed_sequence_number: boundary.last_sequence_number,
+                    delivered_batch,
+                });
+                continue;
+            }
+        }
+
+        let event_record = event_records[event_index].clone();
+        event_index += 1;
+
+        let delivered_batch = if matches_query(event_query, &event_record) {
+            vec![event_record.clone()]
+        } else {
+            Vec::new()
+        };
 
         replay_batches.push(ReplayBatch {
-            last_processed_sequence_number: last_sequence_number,
+            last_processed_sequence_number: event_record.sequence_number,
             delivered_batch,
         });
     }
 
-    Ok(replay_batches)
+    replay_batches
 }
 
 fn normalized_durable_event_query(event_query: &EventQuery) -> EventQuery {

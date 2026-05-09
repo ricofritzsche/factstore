@@ -93,6 +93,14 @@ pub(crate) async fn metadata_value(connection: &mut SqliteConnection, key: &str)
         .map(|row| row.get::<String, _>("value"))
 }
 
+pub(crate) async fn delete_metadata_key(connection: &mut SqliteConnection, key: &str) {
+    sqlx::query("DELETE FROM store_metadata WHERE key = ?1")
+        .bind(key)
+        .execute(connection)
+        .await
+        .expect("store metadata delete should succeed");
+}
+
 pub(crate) async fn subscriber_cursor(
     connection: &mut SqliteConnection,
     subscriber_id: &str,
@@ -112,4 +120,23 @@ pub(crate) async fn subscriber_cursor(
             row.get::<i64, _>("last_processed_sequence_number") as u64,
         )
     })
+}
+
+pub(crate) async fn append_batch_rows(connection: &mut SqliteConnection) -> Vec<(u64, u64)> {
+    sqlx::query(
+        "SELECT first_sequence_number, last_sequence_number
+         FROM append_batches
+         ORDER BY first_sequence_number ASC",
+    )
+    .fetch_all(connection)
+    .await
+    .expect("append batch lookup should succeed")
+    .into_iter()
+    .map(|row| {
+        (
+            row.get::<i64, _>("first_sequence_number") as u64,
+            row.get::<i64, _>("last_sequence_number") as u64,
+        )
+    })
+    .collect()
 }
