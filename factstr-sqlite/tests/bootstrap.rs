@@ -5,6 +5,9 @@ use factstr_sqlite::SqliteStore;
 
 use support::{TemporaryDatabaseFile, connect, index_exists, metadata_value, table_exists};
 
+const APPEND_BATCH_BOUNDARY_FORMAT_KEY: &str = "append_batch_boundary_format";
+const APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1: &str = "sparse_v1";
+
 #[test]
 fn opening_a_new_database_creates_schema_and_metadata() {
     let database_file = TemporaryDatabaseFile::new("bootstrap-schema");
@@ -29,6 +32,12 @@ fn opening_a_new_database_creates_schema_and_metadata() {
 
         let store_format_version = metadata_value(&mut connection, "store_format_version").await;
         assert_eq!(store_format_version.as_deref(), Some("1"));
+        let append_batch_boundary_format =
+            metadata_value(&mut connection, APPEND_BATCH_BOUNDARY_FORMAT_KEY).await;
+        assert_eq!(
+            append_batch_boundary_format.as_deref(),
+            Some(APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1)
+        );
     });
 }
 
@@ -54,6 +63,12 @@ fn opening_a_new_database_succeeds_inside_a_running_tokio_runtime() {
 
         let store_format_version = metadata_value(&mut connection, "store_format_version").await;
         assert_eq!(store_format_version.as_deref(), Some("1"));
+        let append_batch_boundary_format =
+            metadata_value(&mut connection, APPEND_BATCH_BOUNDARY_FORMAT_KEY).await;
+        assert_eq!(
+            append_batch_boundary_format.as_deref(),
+            Some(APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1)
+        );
     });
 }
 
@@ -73,6 +88,12 @@ fn reopening_the_same_database_succeeds_and_preserves_metadata() {
         let mut connection = connect(database_file.path()).await;
         let store_format_version = metadata_value(&mut connection, "store_format_version").await;
         assert_eq!(store_format_version.as_deref(), Some("1"));
+        let append_batch_boundary_format =
+            metadata_value(&mut connection, APPEND_BATCH_BOUNDARY_FORMAT_KEY).await;
+        assert_eq!(
+            append_batch_boundary_format.as_deref(),
+            Some(APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1)
+        );
     });
 }
 

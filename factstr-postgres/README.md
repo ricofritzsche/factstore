@@ -29,8 +29,8 @@ Use `factstr-postgres` when:
 - Committed facts and durable stream cursors are stored in PostgreSQL.
 - SQL transactions and indexes are used internally.
 - An internal worker thread keeps the synchronous store API safe to call from inside a running Tokio runtime.
-- Durable replay depends on persisted append-batch history.
-- Older databases without contiguous append-batch history are rejected for durable replay instead of being silently backfilled.
+- `append_batches` rows are stored only for committed multi-event appends.
+- Durable replay treats a missing `append_batches` row as a single-event committed append.
 
 Integration tests for this crate require a PostgreSQL database.
 

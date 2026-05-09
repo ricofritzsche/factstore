@@ -4,11 +4,19 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use factstr::{DurableStream, EventRecord, EventStore, EventStoreError, NewEvent};
+use factstr::{
+    DurableStream, EventFilter, EventQuery, EventRecord, EventStore, EventStoreError, NewEvent,
+};
 use factstr_conformance as store_conformance;
 use serde_json::json;
 
-use support::{TemporarySchema, clear_append_batches, durable_stream_cursor, insert_append_batch};
+use support::{
+    TemporarySchema, append_batch_rows, delete_metadata_key, durable_stream_cursor,
+    insert_append_batch, metadata_value,
+};
+
+const APPEND_BATCH_BOUNDARY_FORMAT_KEY: &str = "append_batch_boundary_format";
+const APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1: &str = "sparse_v1";
 
 #[test]
 fn durable_stream_state_is_reused_for_the_same_durable_stream_id() {
@@ -168,7 +176,7 @@ fn durable_replay_returns_event_records_with_original_occurred_at() {
 }
 
 #[test]
-fn replay_setup_failure_does_not_strand_a_durable_stream() {
+fn old_style_single_event_append_batch_rows_do_not_break_replay() {
     let temporary_schema = TemporarySchema::new();
     let store = temporary_schema.create_store();
     let recovery_log = Arc::new(Mutex::new(Vec::new()));
@@ -179,20 +187,6 @@ fn replay_setup_failure_does_not_strand_a_durable_stream() {
             json!({ "accountId": "a1" }),
         )])
         .expect("historical append should succeed");
-    drop(store);
-
-    clear_append_batches(temporary_schema.database_url());
-
-    let store = temporary_schema.create_store();
-    let error = match store.stream_all_durable(
-        &DurableStream::new("setup-failure"),
-        recording_handle(Arc::clone(&recovery_log)),
-    ) {
-        Ok(_) => panic!("invalid replay history should fail durable stream"),
-        Err(error) => error,
-    };
-    assert!(matches!(error, EventStoreError::BackendFailure { .. }));
-
     insert_append_batch(temporary_schema.database_url(), 1, 1);
 
     let _stream = store
@@ -200,13 +194,238 @@ fn replay_setup_failure_does_not_strand_a_durable_stream() {
             &DurableStream::new("setup-failure"),
             recording_handle(Arc::clone(&recovery_log)),
         )
-        .expect("retry should succeed after fixing replay history");
+        .expect("durable replay should accept old-style single-event boundaries");
 
     let delivered_batches = wait_for_delivery_count(&recovery_log, 1);
     assert_eq!(batch_sequences(&delivered_batches), vec![vec![1]]);
     assert_eq!(
         durable_stream_cursor(temporary_schema.database_url(), "setup-failure").1,
         1
+    );
+}
+
+#[test]
+fn durable_replay_is_rejected_when_sparse_boundary_marker_is_missing() {
+    let temporary_schema = TemporarySchema::new();
+    let store = temporary_schema.create_store();
+
+    store
+        .append(vec![NewEvent::new(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("historical append should succeed");
+
+    assert_eq!(
+        metadata_value(
+            temporary_schema.database_url(),
+            APPEND_BATCH_BOUNDARY_FORMAT_KEY
+        )
+        .as_deref(),
+        Some(APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1)
+    );
+    delete_metadata_key(
+        temporary_schema.database_url(),
+        APPEND_BATCH_BOUNDARY_FORMAT_KEY,
+    );
+
+    let error = match store.stream_all_durable(
+        &DurableStream::new("missing-marker"),
+        factstr::HandleStream::new(|_| async { Ok(()) }),
+    ) {
+        Ok(_) => panic!("durable replay should reject a missing sparse boundary marker"),
+        Err(error) => error,
+    };
+
+    match error {
+        EventStoreError::BackendFailure { message } => {
+            assert!(
+                message.contains(APPEND_BATCH_BOUNDARY_FORMAT_KEY),
+                "expected sparse boundary marker error, got: {message}"
+            );
+        }
+        other => panic!("expected backend failure, got {other:?}"),
+    }
+}
+
+#[test]
+fn single_event_appends_do_not_create_append_batch_rows() {
+    let temporary_schema = TemporarySchema::new();
+    let store = temporary_schema.create_store();
+
+    store
+        .append(vec![NewEvent::new(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("first single-event append should succeed");
+    store
+        .append(vec![NewEvent::new(
+            "account-renamed",
+            json!({ "accountId": "a1", "name": "Primary" }),
+        )])
+        .expect("second single-event append should succeed");
+
+    assert_eq!(
+        append_batch_rows(temporary_schema.database_url()),
+        Vec::<(u64, u64)>::new()
+    );
+}
+
+#[test]
+fn multi_event_append_creates_one_append_batch_row() {
+    let temporary_schema = TemporarySchema::new();
+    let store = temporary_schema.create_store();
+
+    store
+        .append(vec![
+            NewEvent::new("account-opened", json!({ "accountId": "a1" })),
+            NewEvent::new(
+                "account-renamed",
+                json!({ "accountId": "a1", "name": "Primary" }),
+            ),
+            NewEvent::new(
+                "account-credited",
+                json!({ "accountId": "a1", "amount": 50 }),
+            ),
+        ])
+        .expect("multi-event append should succeed");
+
+    assert_eq!(
+        append_batch_rows(temporary_schema.database_url()),
+        vec![(1, 3)]
+    );
+}
+
+#[test]
+fn durable_replay_uses_sparse_append_batch_boundaries() {
+    let temporary_schema = TemporarySchema::new();
+    let store = temporary_schema.create_store();
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+
+    store
+        .append(vec![NewEvent::new(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("single-event append should succeed");
+    store
+        .append(vec![
+            NewEvent::new(
+                "account-renamed",
+                json!({ "accountId": "a1", "name": "Primary" }),
+            ),
+            NewEvent::new(
+                "account-credited",
+                json!({ "accountId": "a1", "amount": 50 }),
+            ),
+            NewEvent::new(
+                "account-debited",
+                json!({ "accountId": "a1", "amount": 20 }),
+            ),
+        ])
+        .expect("multi-event append should succeed");
+    store
+        .append(vec![NewEvent::new(
+            "account-closed",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("trailing single-event append should succeed");
+
+    let _stream = store
+        .stream_all_durable(
+            &DurableStream::new("sparse-replay"),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
+        .expect("durable replay should succeed");
+
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 3);
+    assert_eq!(
+        batch_sequences(&delivered_batches),
+        vec![vec![1], vec![2, 3, 4], vec![5]]
+    );
+    assert_eq!(
+        durable_stream_cursor(temporary_schema.database_url(), "sparse-replay").1,
+        5
+    );
+}
+
+#[test]
+fn filtered_durable_replay_preserves_multi_event_batch_boundary_and_cursor_target() {
+    let temporary_schema = TemporarySchema::new();
+    let store = temporary_schema.create_store();
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+
+    store
+        .append(vec![
+            NewEvent::new("inventory-adjusted", json!({ "sku": "a1", "delta": 5 })),
+            NewEvent::new("inventory-snapshotted", json!({ "sku": "a1", "count": 5 })),
+            NewEvent::new("inventory-adjusted", json!({ "sku": "a1", "delta": -2 })),
+        ])
+        .expect("multi-event append should succeed");
+
+    let _stream = store
+        .stream_to_durable(
+            &DurableStream::new("filtered-multi-event"),
+            &EventQuery::all().with_filters([EventFilter::for_event_types(["inventory-adjusted"])]),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
+        .expect("filtered durable replay should succeed");
+
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 1);
+    assert_eq!(batch_sequences(&delivered_batches), vec![vec![1, 3]]);
+    assert_eq!(
+        durable_stream_cursor(temporary_schema.database_url(), "filtered-multi-event").1,
+        3
+    );
+}
+
+#[test]
+fn filtered_durable_replay_skips_non_matching_multi_event_batches_and_reaches_live_delivery() {
+    let temporary_schema = TemporarySchema::new();
+    let store = temporary_schema.create_store();
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+
+    store
+        .append(vec![
+            NewEvent::new("inventory-snapshotted", json!({ "sku": "a1", "count": 5 })),
+            NewEvent::new("inventory-snapshotted", json!({ "sku": "a1", "count": 7 })),
+        ])
+        .expect("non-matching multi-event append should succeed");
+    store
+        .append(vec![NewEvent::new(
+            "inventory-adjusted",
+            json!({ "sku": "a1", "delta": 2 }),
+        )])
+        .expect("matching replay append should succeed");
+
+    let _stream = store
+        .stream_to_durable(
+            &DurableStream::new("filtered-non-matching"),
+            &EventQuery::all().with_filters([EventFilter::for_event_types(["inventory-adjusted"])]),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
+        .expect("filtered durable replay should succeed");
+
+    let first_delivery = wait_for_delivery_count(&delivery_log, 1);
+    assert_eq!(batch_sequences(&first_delivery), vec![vec![3]]);
+    assert_eq!(
+        durable_stream_cursor(temporary_schema.database_url(), "filtered-non-matching").1,
+        3
+    );
+
+    store
+        .append(vec![NewEvent::new(
+            "inventory-adjusted",
+            json!({ "sku": "a1", "delta": -1 }),
+        )])
+        .expect("live matching append should succeed");
+
+    let live_delivery = wait_for_delivery_count(&delivery_log, 2);
+    assert_eq!(batch_sequences(&live_delivery), vec![vec![3], vec![4]]);
+    assert_eq!(
+        durable_stream_cursor(temporary_schema.database_url(), "filtered-non-matching").1,
+        4
     );
 }
 

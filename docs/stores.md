@@ -53,9 +53,9 @@ Operationally, it differs from the other stores by:
 
 - persisting events and durable stream cursors in SQLite
 - replaying committed batches from stored cursors before switching to future committed delivery
-- bounding durable replay correctness on persisted `append_batches` history
+- storing `append_batches` rows only for committed multi-event appends
 
-Operationally, it persists committed events and durable stream cursors across process restarts. Durable replay still depends on persisted `append_batches` history, so older databases created before that history existed are rejected for durable replay instead of being backfilled automatically.
+Operationally, it persists committed events and durable stream cursors across process restarts. Durable replay reconstructs committed batch boundaries from persisted `append_batches` rows when they exist, and treats missing rows as single-event appends.
 
 For guidance on when SQLite is a good fit and when it is not, see [SQLite Store: What It Is For, and When Not to Use It](sqlite.md).
 
@@ -84,7 +84,8 @@ Operationally, it differs from the memory store by:
 - persisting committed events and durable stream cursors in PostgreSQL
 - using SQL transactions and indexes
 - using an internal worker thread so the synchronous store API remains safe to call from inside a running Tokio runtime
-- rejecting durable replay on older databases that do not have contiguous `append_batches` history
+- storing `append_batches` rows only for committed multi-event appends
+- treating missing `append_batches` rows as single-event appends during durable replay
 
 ## Shared Semantics Across Stores
 
@@ -110,5 +111,5 @@ Shared reusable durable-stream conformance now exists across the stores.
 Remaining store-specific tests prove only store-local boundaries:
 
 - Memory durable state is instance-lifetime only
-- SQLite durable replay depends on persisted `append_batches` history and rejects older databases without it
-- PostgreSQL durable replay depends on persisted `append_batches` history and rejects older databases without it
+- SQLite stores append-boundary metadata only for committed multi-event appends
+- PostgreSQL stores append-boundary metadata only for committed multi-event appends

@@ -199,8 +199,44 @@ export async function runPostgresStoreSmoke(): Promise<void> {
   streamAllSubscription.unsubscribe();
   streamToSubscription.unsubscribe();
 
+  const durableAccountId = uniquePostgresSmokeId('postgres-durable-account');
+  const durableDatabaseName = uniquePostgresSmokeId('postgres_durable');
+  const durableStore = FactstrPostgresStore.bootstrap({
+    serverUrl: postgresServerUrl(databaseUrl),
+    databaseName: durableDatabaseName,
+  });
+  const durableDepositQuery: EventQuery = {
+    filters: [
+      {
+        event_types: ['money-deposited'],
+        payload_predicates: [{ accountId: durableAccountId }],
+      },
+    ],
+  };
+
+  durableStore.append([
+    {
+      event_type: 'account-opened',
+      payload: { accountId: durableAccountId, owner: 'Durable' },
+    },
+  ]);
+  durableStore.append([
+    {
+      event_type: 'money-deposited',
+      payload: { accountId: durableAccountId, amount: 25 },
+    },
+    {
+      event_type: 'account-tagged',
+      payload: { accountId: durableAccountId, tag: 'gold' },
+    },
+    {
+      event_type: 'money-deposited',
+      payload: { accountId: durableAccountId, amount: 40 },
+    },
+  ]);
+
   const durableAllReplayBatches: EventRecord[][] = [];
-  const durableAllSubscription = store.streamAllDurable(durableAllStream, (events) => {
+  const durableAllSubscription = durableStore.streamAllDurable(durableAllStream, (events) => {
     durableAllReplayBatches.push(events);
   });
   await waitForCondition(
@@ -209,7 +245,7 @@ export async function runPostgresStoreSmoke(): Promise<void> {
       durableAllReplayBatches,
       (eventRecord) =>
         eventRecord.event_type === 'account-opened'
-        && (eventRecord.payload as { accountId?: string }).accountId === accountId,
+        && (eventRecord.payload as { accountId?: string }).accountId === durableAccountId,
     ),
   );
   assert(
@@ -217,7 +253,7 @@ export async function runPostgresStoreSmoke(): Promise<void> {
       durableAllReplayBatches,
       (eventRecord) =>
         eventRecord.event_type === 'account-opened'
-        && (eventRecord.payload as { accountId?: string }).accountId === accountId,
+        && (eventRecord.payload as { accountId?: string }).accountId === durableAccountId,
     ),
     'postgres durable replay should include the historical account-opened fact',
   );
@@ -228,17 +264,17 @@ export async function runPostgresStoreSmoke(): Promise<void> {
         && batch.some(
           (eventRecord) =>
             eventRecord.event_type === 'account-tagged'
-            && (eventRecord.payload as { accountId?: string; tag?: string }).accountId === accountId
+            && (eventRecord.payload as { accountId?: string; tag?: string }).accountId === durableAccountId
             && (eventRecord.payload as { tag?: string }).tag === 'gold',
         ),
     ),
     'postgres durable replay should preserve the committed mixed batch',
   );
 
-  store.append([
+  durableStore.append([
     {
       event_type: 'money-deposited',
-      payload: { accountId, amount: 50 },
+      payload: { accountId: durableAccountId, amount: 50 },
     },
   ]);
   await waitForCondition(
@@ -247,7 +283,7 @@ export async function runPostgresStoreSmoke(): Promise<void> {
       durableAllReplayBatches,
       (eventRecord) =>
         eventRecord.event_type === 'money-deposited'
-        && (eventRecord.payload as { accountId?: string; amount?: number }).accountId === accountId
+        && (eventRecord.payload as { accountId?: string; amount?: number }).accountId === durableAccountId
         && (eventRecord.payload as { amount?: number }).amount === 50,
     ),
   );
@@ -256,14 +292,14 @@ export async function runPostgresStoreSmoke(): Promise<void> {
   const falseReturnDurableStream: DurableStream = {
     name: uniquePostgresSmokeId('postgres-durable-false-return'),
   };
-  const falseReturnCursorSubscription = store.streamAllDurable(
+  const falseReturnCursorSubscription = durableStore.streamAllDurable(
     falseReturnDurableStream,
     () => {},
   );
   falseReturnCursorSubscription.unsubscribe();
 
   const falseReturnBatches: EventRecord[][] = [];
-  const falseReturnSubscription = store.streamAllDurable(
+  const falseReturnSubscription = durableStore.streamAllDurable(
     falseReturnDurableStream,
     (events) => {
       falseReturnBatches.push(events);
@@ -271,10 +307,10 @@ export async function runPostgresStoreSmoke(): Promise<void> {
     },
   );
 
-  store.append([
+  durableStore.append([
     {
       event_type: 'account-note-added',
-      payload: { accountId, note: 'delivery should retry' },
+      payload: { accountId: durableAccountId, note: 'delivery should retry' },
     },
   ]);
   await waitForCondition(
@@ -283,13 +319,13 @@ export async function runPostgresStoreSmoke(): Promise<void> {
       falseReturnBatches,
       (eventRecord) =>
         eventRecord.event_type === 'account-note-added'
-        && (eventRecord.payload as { accountId?: string }).accountId === accountId,
+        && (eventRecord.payload as { accountId?: string }).accountId === durableAccountId,
     ),
   );
   falseReturnSubscription.unsubscribe();
 
   const recoveredFalseReturnBatches: EventRecord[][] = [];
-  const recoveredFalseReturnSubscription = store.streamAllDurable(
+  const recoveredFalseReturnSubscription = durableStore.streamAllDurable(
     falseReturnDurableStream,
     (events) => {
       recoveredFalseReturnBatches.push(events);
@@ -301,23 +337,23 @@ export async function runPostgresStoreSmoke(): Promise<void> {
       recoveredFalseReturnBatches,
       (eventRecord) =>
         eventRecord.event_type === 'account-note-added'
-        && (eventRecord.payload as { accountId?: string }).accountId === accountId,
+        && (eventRecord.payload as { accountId?: string }).accountId === durableAccountId,
     ),
   );
   assert(
     recoveredFalseReturnBatches[0].some(
       (eventRecord) =>
         eventRecord.event_type === 'account-note-added'
-        && (eventRecord.payload as { accountId?: string }).accountId === accountId,
+        && (eventRecord.payload as { accountId?: string }).accountId === durableAccountId,
     ),
     'postgres durable false return should replay the undelivered batch',
   );
   recoveredFalseReturnSubscription.unsubscribe();
 
   const durableFilteredReplayBatches: EventRecord[][] = [];
-  const durableFilteredSubscription = store.streamToDurable(
+  const durableFilteredSubscription = durableStore.streamToDurable(
     durableFilteredStream,
-    depositQuery,
+    durableDepositQuery,
     (events) => {
       durableFilteredReplayBatches.push(events);
     },
@@ -329,7 +365,7 @@ export async function runPostgresStoreSmoke(): Promise<void> {
         durableFilteredReplayBatches,
         (eventRecord) =>
           eventRecord.event_type === 'money-deposited'
-          && (eventRecord.payload as { accountId?: string; amount?: number }).accountId === accountId
+          && (eventRecord.payload as { accountId?: string; amount?: number }).accountId === durableAccountId
           && (eventRecord.payload as { amount?: number }).amount === 50,
       ),
   );
@@ -338,10 +374,10 @@ export async function runPostgresStoreSmoke(): Promise<void> {
     'postgres durable filtered replay should keep only matching facts',
   );
 
-  store.append([
+  durableStore.append([
     {
       event_type: 'account-tagged',
-      payload: { accountId, tag: 'platinum' },
+      payload: { accountId: durableAccountId, tag: 'platinum' },
     },
   ]);
   await waitForNoNewDeliveries(
@@ -350,10 +386,10 @@ export async function runPostgresStoreSmoke(): Promise<void> {
     2,
   );
 
-  store.append([
+  durableStore.append([
     {
       event_type: 'money-deposited',
-      payload: { accountId, amount: 75 },
+      payload: { accountId: durableAccountId, amount: 75 },
     },
   ]);
   await waitForCondition(

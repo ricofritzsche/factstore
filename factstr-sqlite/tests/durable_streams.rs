@@ -4,12 +4,19 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use factstr::{DurableStream, EventRecord, EventStore, EventStoreError, NewEvent};
+use factstr::EventStoreError;
+use factstr::{DurableStream, EventFilter, EventQuery, EventRecord, EventStore, NewEvent};
 use factstr_conformance as store_conformance;
 use factstr_sqlite::SqliteStore;
 use serde_json::json;
 
-use support::{TemporaryDatabaseFile, connect, subscriber_cursor};
+use support::{
+    TemporaryDatabaseFile, append_batch_rows, connect, delete_metadata_key, metadata_value,
+    subscriber_cursor,
+};
+
+const APPEND_BATCH_BOUNDARY_FORMAT_KEY: &str = "append_batch_boundary_format";
+const APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1: &str = "sparse_v1";
 
 #[test]
 fn durable_stream_state_is_reused_for_the_same_durable_stream_id() {
@@ -130,8 +137,8 @@ fn durable_cursor_is_persisted_and_reopen_resumes_after_the_stored_cursor() {
 }
 
 #[test]
-fn replay_setup_failure_does_not_strand_a_durable_subscriber() {
-    let database_file = TemporaryDatabaseFile::new("durable-subscriptions-setup-failure");
+fn old_style_single_event_append_batch_rows_do_not_break_replay() {
+    let database_file = TemporaryDatabaseFile::new("durable-subscriptions-old-single-boundary");
     let store = SqliteStore::open(database_file.path()).expect("sqlite store should open");
     let recovery_log = Arc::new(Mutex::new(Vec::new()));
 
@@ -141,20 +148,6 @@ fn replay_setup_failure_does_not_strand_a_durable_subscriber() {
             json!({ "accountId": "a1" }),
         )])
         .expect("historical append should succeed");
-    drop(store);
-
-    clear_append_batches(database_file.path());
-
-    let store = SqliteStore::open(database_file.path()).expect("sqlite store should reopen");
-    let error = match store.stream_all_durable(
-        &DurableStream::new("setup-failure"),
-        recording_handle(Arc::clone(&recovery_log)),
-    ) {
-        Ok(_) => panic!("invalid replay payload should fail durable subscribe"),
-        Err(error) => error,
-    };
-    assert!(matches!(error, EventStoreError::BackendFailure { .. }));
-
     insert_append_batch(database_file.path(), 1, 1);
 
     let _subscription = store
@@ -162,7 +155,7 @@ fn replay_setup_failure_does_not_strand_a_durable_subscriber() {
             &DurableStream::new("setup-failure"),
             recording_handle(Arc::clone(&recovery_log)),
         )
-        .expect("retry should succeed after fixing replay data");
+        .expect("durable replay should accept old-style single-event boundaries");
 
     let delivered_batches = wait_for_delivery_count(&recovery_log, 1);
     assert_eq!(batch_sequences(&delivered_batches), vec![vec![1]]);
@@ -170,8 +163,65 @@ fn replay_setup_failure_does_not_strand_a_durable_subscriber() {
 }
 
 #[test]
-fn durable_replay_rejects_databases_without_append_batch_history() {
-    let database_file = TemporaryDatabaseFile::new("durable-subscriptions-missing-history");
+fn durable_replay_is_rejected_when_sparse_boundary_marker_is_missing() {
+    let database_file = TemporaryDatabaseFile::new("missing-sparse-boundary-marker");
+    let store = SqliteStore::open(database_file.path()).expect("sqlite store should open");
+
+    store
+        .append(vec![NewEvent::new(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("historical append should succeed");
+
+    delete_append_batch_boundary_format(database_file.path());
+
+    let error = match store.stream_all_durable(
+        &DurableStream::new("missing-marker"),
+        factstr::HandleStream::new(|_| async { Ok(()) }),
+    ) {
+        Ok(_) => panic!("durable replay should reject a missing sparse boundary marker"),
+        Err(error) => error,
+    };
+
+    match error {
+        EventStoreError::BackendFailure { message } => {
+            assert!(
+                message.contains(APPEND_BATCH_BOUNDARY_FORMAT_KEY),
+                "expected sparse boundary marker error, got: {message}"
+            );
+        }
+        other => panic!("expected backend failure, got {other:?}"),
+    }
+}
+
+#[test]
+fn single_event_appends_do_not_create_append_batch_rows() {
+    let database_file = TemporaryDatabaseFile::new("single-event-append-batches");
+    let store = SqliteStore::open(database_file.path()).expect("sqlite store should open");
+
+    store
+        .append(vec![NewEvent::new(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("first single-event append should succeed");
+    store
+        .append(vec![NewEvent::new(
+            "account-renamed",
+            json!({ "accountId": "a1", "name": "Primary" }),
+        )])
+        .expect("second single-event append should succeed");
+
+    assert_eq!(
+        read_append_batch_rows(database_file.path()),
+        Vec::<(u64, u64)>::new()
+    );
+}
+
+#[test]
+fn multi_event_append_creates_one_append_batch_row() {
+    let database_file = TemporaryDatabaseFile::new("multi-event-append-batches");
     let store = SqliteStore::open(database_file.path()).expect("sqlite store should open");
 
     store
@@ -181,28 +231,134 @@ fn durable_replay_rejects_databases_without_append_batch_history() {
                 "account-renamed",
                 json!({ "accountId": "a1", "name": "Primary" }),
             ),
+            NewEvent::new(
+                "account-credited",
+                json!({ "accountId": "a1", "amount": 50 }),
+            ),
         ])
-        .expect("historical append should succeed");
+        .expect("multi-event append should succeed");
 
-    clear_append_batches(database_file.path());
+    assert_eq!(read_append_batch_rows(database_file.path()), vec![(1, 3)]);
+}
 
-    let error = match store.stream_all_durable(
-        &DurableStream::new("missing-history"),
-        factstr::HandleStream::new(|_| async { Ok(()) }),
-    ) {
-        Ok(_) => panic!("durable replay should reject missing append batch history"),
-        Err(error) => error,
-    };
+#[test]
+fn durable_replay_uses_sparse_append_batch_boundaries() {
+    let database_file = TemporaryDatabaseFile::new("sparse-append-batch-replay");
+    let store = SqliteStore::open(database_file.path()).expect("sqlite store should open");
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
 
-    match error {
-        EventStoreError::BackendFailure { message } => {
-            assert!(
-                message.contains("append_batches history"),
-                "expected explicit append_batches boundary error, got: {message}"
-            );
-        }
-        other => panic!("expected backend failure, got {other:?}"),
-    }
+    store
+        .append(vec![NewEvent::new(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("single-event append should succeed");
+    store
+        .append(vec![
+            NewEvent::new(
+                "account-renamed",
+                json!({ "accountId": "a1", "name": "Primary" }),
+            ),
+            NewEvent::new(
+                "account-credited",
+                json!({ "accountId": "a1", "amount": 50 }),
+            ),
+            NewEvent::new(
+                "account-debited",
+                json!({ "accountId": "a1", "amount": 20 }),
+            ),
+        ])
+        .expect("multi-event append should succeed");
+    store
+        .append(vec![NewEvent::new(
+            "account-closed",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("trailing single-event append should succeed");
+
+    let _subscription = store
+        .stream_all_durable(
+            &DurableStream::new("sparse-replay"),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
+        .expect("durable replay should succeed");
+
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 3);
+    assert_eq!(
+        batch_sequences(&delivered_batches),
+        vec![vec![1], vec![2, 3, 4], vec![5]]
+    );
+    assert_cursor_reaches(database_file.path(), "sparse-replay", 5);
+}
+
+#[test]
+fn filtered_durable_replay_preserves_multi_event_batch_boundary_and_cursor_target() {
+    let database_file = TemporaryDatabaseFile::new("filtered-multi-event-replay");
+    let store = SqliteStore::open(database_file.path()).expect("sqlite store should open");
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+
+    store
+        .append(vec![
+            NewEvent::new("inventory-adjusted", json!({ "sku": "a1", "delta": 5 })),
+            NewEvent::new("inventory-snapshotted", json!({ "sku": "a1", "count": 5 })),
+            NewEvent::new("inventory-adjusted", json!({ "sku": "a1", "delta": -2 })),
+        ])
+        .expect("multi-event append should succeed");
+
+    let _subscription = store
+        .stream_to_durable(
+            &DurableStream::new("filtered-multi-event"),
+            &EventQuery::all().with_filters([EventFilter::for_event_types(["inventory-adjusted"])]),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
+        .expect("filtered durable replay should succeed");
+
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 1);
+    assert_eq!(batch_sequences(&delivered_batches), vec![vec![1, 3]]);
+    assert_cursor_reaches(database_file.path(), "filtered-multi-event", 3);
+}
+
+#[test]
+fn filtered_durable_replay_skips_non_matching_multi_event_batches_and_reaches_live_delivery() {
+    let database_file = TemporaryDatabaseFile::new("filtered-non-matching-multi-event");
+    let store = SqliteStore::open(database_file.path()).expect("sqlite store should open");
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+
+    store
+        .append(vec![
+            NewEvent::new("inventory-snapshotted", json!({ "sku": "a1", "count": 5 })),
+            NewEvent::new("inventory-snapshotted", json!({ "sku": "a1", "count": 7 })),
+        ])
+        .expect("non-matching multi-event append should succeed");
+    store
+        .append(vec![NewEvent::new(
+            "inventory-adjusted",
+            json!({ "sku": "a1", "delta": 2 }),
+        )])
+        .expect("matching replay append should succeed");
+
+    let _subscription = store
+        .stream_to_durable(
+            &DurableStream::new("filtered-non-matching"),
+            &EventQuery::all().with_filters([EventFilter::for_event_types(["inventory-adjusted"])]),
+            recording_handle(Arc::clone(&delivery_log)),
+        )
+        .expect("filtered durable replay should succeed");
+
+    let first_delivery = wait_for_delivery_count(&delivery_log, 1);
+    assert_eq!(batch_sequences(&first_delivery), vec![vec![3]]);
+    assert_cursor_reaches(database_file.path(), "filtered-non-matching", 3);
+
+    store
+        .append(vec![NewEvent::new(
+            "inventory-adjusted",
+            json!({ "sku": "a1", "delta": -1 }),
+        )])
+        .expect("live matching append should succeed");
+
+    let live_delivery = wait_for_delivery_count(&delivery_log, 2);
+    assert_eq!(batch_sequences(&live_delivery), vec![vec![3], vec![4]]);
+    assert_cursor_reaches(database_file.path(), "filtered-non-matching", 4);
 }
 
 fn recording_handle(delivery_log: Arc<Mutex<Vec<Vec<EventRecord>>>>) -> factstr::HandleStream {
@@ -331,7 +487,7 @@ fn insert_append_batch(
     });
 }
 
-fn clear_append_batches(database_path: &std::path::Path) {
+fn read_append_batch_rows(database_path: &std::path::Path) -> Vec<(u64, u64)> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -339,9 +495,23 @@ fn clear_append_batches(database_path: &std::path::Path) {
 
     runtime.block_on(async {
         let mut connection = connect(database_path).await;
-        sqlx::query("DELETE FROM append_batches")
-            .execute(&mut connection)
-            .await
-            .expect("append batch clear should succeed");
+        append_batch_rows(&mut connection).await
+    })
+}
+
+fn delete_append_batch_boundary_format(database_path: &std::path::Path) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime should build");
+
+    runtime.block_on(async {
+        let mut connection = connect(database_path).await;
+        let marker_before = metadata_value(&mut connection, APPEND_BATCH_BOUNDARY_FORMAT_KEY).await;
+        assert_eq!(
+            marker_before.as_deref(),
+            Some(APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1)
+        );
+        delete_metadata_key(&mut connection, APPEND_BATCH_BOUNDARY_FORMAT_KEY).await;
     });
 }

@@ -8,7 +8,10 @@ use factstr::{DurableStream, EventQuery, EventStore, EventStoreError, NewEvent};
 use factstr_postgres::{PostgresBootstrapOptions, PostgresStore};
 use serde_json::json;
 
-use support::{TemporaryDatabase, database_url_with_query_parameter};
+use support::{TemporaryDatabase, database_url_with_query_parameter, metadata_value};
+
+const APPEND_BATCH_BOUNDARY_FORMAT_KEY: &str = "append_batch_boundary_format";
+const APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1: &str = "sparse_v1";
 
 #[test]
 fn bootstrap_creates_a_missing_database_and_returns_a_ready_store() {
@@ -50,6 +53,14 @@ fn bootstrap_creates_a_missing_database_and_returns_a_ready_store() {
         .query(&EventQuery::all())
         .expect("reopened query should succeed");
     assert_eq!(reopened_query_result.event_records.len(), 1);
+    assert_eq!(
+        metadata_value(
+            temporary_database.database_url(),
+            APPEND_BATCH_BOUNDARY_FORMAT_KEY
+        )
+        .as_deref(),
+        Some(APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1)
+    );
 }
 
 #[test]
@@ -86,6 +97,14 @@ fn bootstrap_is_idempotent_when_the_database_already_exists() {
         .expect("append_if after second bootstrap should succeed");
     assert_eq!(append_if_result.first_sequence_number, 2);
     assert_eq!(append_if_result.last_sequence_number, 2);
+    assert_eq!(
+        metadata_value(
+            temporary_database.database_url(),
+            APPEND_BATCH_BOUNDARY_FORMAT_KEY
+        )
+        .as_deref(),
+        Some(APPEND_BATCH_BOUNDARY_FORMAT_SPARSE_V1)
+    );
 }
 
 #[test]
