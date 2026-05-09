@@ -1,6 +1,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use factstr::{EventQuery, EventRecord, HandleStream};
+use tokio::runtime::Runtime;
 
 use crate::query_match::matches_query;
 
@@ -205,7 +206,7 @@ impl SubscriptionRegistry {
 }
 
 impl PendingDelivery {
-    pub(crate) fn deliver(self) -> DeliveryOutcome {
+    pub(crate) fn deliver(self, runtime: &Runtime) -> DeliveryOutcome {
         if self.delivered_batch.is_empty() {
             return DeliveryOutcome::Succeeded {
                 subscription_id: self.subscription_id,
@@ -214,7 +215,9 @@ impl PendingDelivery {
             };
         }
 
-        match catch_unwind(AssertUnwindSafe(|| (self.handle)(self.delivered_batch))) {
+        match catch_unwind(AssertUnwindSafe(|| {
+            runtime.block_on(self.handle.call(self.delivered_batch))
+        })) {
             Ok(Ok(())) => DeliveryOutcome::Succeeded {
                 subscription_id: self.subscription_id,
                 durable_stream_id: self.durable_stream_id,

@@ -10,6 +10,7 @@ use factstr::{
     HandleStream, NewEvent, QueryResult,
 };
 use time::OffsetDateTime;
+use tokio::runtime::{Builder, Runtime};
 
 use crate::query_match::matches_query;
 use crate::stream_registry::{DeliveryOutcome, PendingDelivery, SubscriptionRegistry};
@@ -258,6 +259,7 @@ impl MemoryStore {
             replay_state.last_processed_sequence_number,
             replay_state.replay_until_sequence_number,
         );
+        let delivery_runtime = build_delivery_runtime("factstr-memory durable replay")?;
 
         for replay_batch in replay_batches {
             let pending_delivery = PendingDelivery {
@@ -268,7 +270,7 @@ impl MemoryStore {
                 handle: handle.clone(),
             };
 
-            match self.process_durable_delivery(pending_delivery) {
+            match self.process_durable_delivery(&delivery_runtime, pending_delivery) {
                 Ok(true) => {}
                 Ok(false) => {
                     self.cleanup_durable_stream(replay_state.subscription_id);
@@ -304,9 +306,10 @@ impl MemoryStore {
 
     fn process_durable_delivery(
         &self,
+        delivery_runtime: &Runtime,
         pending_delivery: PendingDelivery,
     ) -> Result<bool, EventStoreError> {
-        match pending_delivery.deliver() {
+        match pending_delivery.deliver(delivery_runtime) {
             DeliveryOutcome::Succeeded {
                 durable_stream_id,
                 last_processed_sequence_number,
@@ -480,11 +483,19 @@ fn run_delivery_thread(
     subscription_registry: Arc<Mutex<SubscriptionRegistry>>,
     delivery_receiver: Receiver<DeliveryCommand>,
 ) {
+    let delivery_runtime = match build_delivery_runtime("factstr-memory delivery") {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("factstr-memory delivery runtime could not start: {}", error);
+            return;
+        }
+    };
+
     while let Ok(delivery_command) = delivery_receiver.recv() {
         match delivery_command {
             DeliveryCommand::Deliver(pending_deliveries) => {
                 for pending_delivery in pending_deliveries {
-                    match pending_delivery.deliver() {
+                    match pending_delivery.deliver(&delivery_runtime) {
                         DeliveryOutcome::Succeeded {
                             subscription_id,
                             durable_stream_id,
@@ -643,4 +654,13 @@ fn normalized_durable_event_query(event_query: &EventQuery) -> EventQuery {
 
 fn subscription_registry_backend_failure(message: String) -> EventStoreError {
     EventStoreError::BackendFailure { message }
+}
+
+fn build_delivery_runtime(operation: &'static str) -> Result<Runtime, EventStoreError> {
+    Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| EventStoreError::BackendFailure {
+            message: format!("{operation} runtime could not start: {error}"),
+        })
 }

@@ -58,10 +58,12 @@ This makes the committed sequence range explicit without overloading it with con
 
 ## `HandleStream`
 
-Callback type for streams and durable streams.
+Async-capable handler wrapper for streams and durable streams.
 
 - receives one delivered committed batch as `Vec<EventRecord>`
-- returns `Result<(), StreamHandlerError>`
+- `HandleStream::new(...)` accepts closures that return futures
+- the handler future resolves to `Result<(), StreamHandlerError>`
+- handler futures are `Send + 'static`
 - is used by `stream_all(...)`, `stream_to(...)`, `stream_all_durable(...)`, and `stream_to_durable(...)`
 
 ## `StreamHandlerError`
@@ -104,6 +106,9 @@ All stores must preserve the same observable append/query/append-if/stream behav
 - `stream_to(&EventQuery, handle)` delivers only future committed facts that match that query, preserving original committed order inside each delivered batch
 - `stream_all_durable(&DurableStream, handle)` resumes from the stored durable cursor, replays committed batches after it, and then continues with future committed batches
 - `stream_to_durable(&DurableStream, &EventQuery, handle)` does the same with filtering for the facts relevant to that durable stream
+- live delivery happens only after append persistence succeeds
+- live handler failure does not roll back append success
+- durable replay awaits each handler future before advancing the durable cursor
 - durable replay starts strictly after the stored cursor
 - durable replay transitions into future committed delivery without duplicates or gaps
 - durable cursors do not advance past undelivered committed facts

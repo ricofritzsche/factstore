@@ -35,6 +35,13 @@ fn durable_replay_to_live_boundary_has_no_duplicates_or_gaps() {
 }
 
 #[test]
+fn durable_replay_waits_for_handler_completion_before_advancing_cursor() {
+    store_conformance::durable_replay_waits_for_handler_completion_before_advancing_cursor(
+        MemoryStore::new,
+    );
+}
+
+#[test]
 fn durable_stream_replay_failure_does_not_advance_cursor_and_retry_replays_from_same_position() {
     store_conformance::durable_stream_replay_failure_does_not_advance_cursor_and_retry_replays_from_same_position(MemoryStore::new);
 }
@@ -93,12 +100,16 @@ fn durable_stream_state_does_not_survive_store_recreation() {
 }
 
 fn recording_handle(delivery_log: Arc<Mutex<Vec<Vec<EventRecord>>>>) -> factstr::HandleStream {
-    Arc::new(move |event_records| {
-        delivery_log
-            .lock()
-            .expect("delivery log lock should succeed")
-            .push(event_records);
-        Ok(())
+    factstr::HandleStream::new(move |event_records| {
+        let delivery_log = Arc::clone(&delivery_log);
+
+        async move {
+            delivery_log
+                .lock()
+                .expect("delivery log lock should succeed")
+                .push(event_records);
+            Ok(())
+        }
     })
 }
 

@@ -21,6 +21,7 @@ pub use durable_streams::{
     durable_replay_respects_event_type_filters, durable_replay_respects_payload_predicate_filters,
     durable_replay_to_live_boundary_has_no_duplicates_or_gaps,
     durable_replay_uses_shared_filter_or_and_semantics,
+    durable_replay_waits_for_handler_completion_before_advancing_cursor,
     durable_stream_replay_failure_does_not_advance_cursor_and_retry_replays_from_same_position,
     durable_stream_state_is_reused_for_the_same_durable_stream_id,
     durable_unsubscribe_stops_future_live_delivery_but_retains_durable_cursor_state,

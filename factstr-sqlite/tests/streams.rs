@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use factstr::{EventFilter, EventQuery, EventStore, NewEvent};
+use factstr::{EventFilter, EventQuery, EventStore, HandleStream, NewEvent};
 use factstr_conformance as store_conformance;
 use factstr_sqlite::SqliteStore;
 use serde_json::json;
@@ -173,28 +173,35 @@ fn already_snapshotted_delivery_may_arrive_after_unsubscribe_but_future_commits_
     let release_first_handler = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
 
     let subscription = store
-        .stream_all(Arc::new({
+        .stream_all(HandleStream::new({
             let delivered_batches = Arc::clone(&delivered_batches);
             let invocation_count = Arc::clone(&invocation_count);
             let release_first_handler = Arc::clone(&release_first_handler);
             move |event_records| {
-                delivered_batches
-                    .lock()
-                    .expect("delivery log lock should succeed")
-                    .push(event_records);
+                let delivered_batches = Arc::clone(&delivered_batches);
+                let invocation_count = Arc::clone(&invocation_count);
+                let release_first_handler = Arc::clone(&release_first_handler);
+                let first_handler_started_sender = first_handler_started_sender.clone();
 
-                if invocation_count.fetch_add(1, Ordering::SeqCst) == 0 {
-                    let _ = first_handler_started_sender.send(());
-                    let (lock, condvar) = &*release_first_handler;
-                    let mut released = lock.lock().expect("handler gate lock should succeed");
-                    while !*released {
-                        released = condvar
-                            .wait(released)
-                            .expect("handler gate wait should succeed");
+                async move {
+                    delivered_batches
+                        .lock()
+                        .expect("delivery log lock should succeed")
+                        .push(event_records);
+
+                    if invocation_count.fetch_add(1, Ordering::SeqCst) == 0 {
+                        let _ = first_handler_started_sender.send(());
+                        let (lock, condvar) = &*release_first_handler;
+                        let mut released = lock.lock().expect("handler gate lock should succeed");
+                        while !*released {
+                            released = condvar
+                                .wait(released)
+                                .expect("handler gate wait should succeed");
+                        }
                     }
-                }
 
-                Ok(())
+                    Ok(())
+                }
             }
         }))
         .expect("subscribe_all should succeed");
@@ -263,7 +270,7 @@ fn panicking_handler_does_not_roll_back_append_success() {
     let successful_delivery_log = Arc::new(Mutex::new(Vec::new()));
 
     let _panicking_subscription = store
-        .stream_all(Arc::new(|_| -> Result<(), factstr::StreamHandlerError> {
+        .stream_all(HandleStream::new(|_| async move {
             panic!("expected sqlite subscription panic")
         }))
         .expect("subscribe_all should succeed");
@@ -296,12 +303,16 @@ fn panicking_handler_does_not_roll_back_append_success() {
 fn recording_handle(
     delivery_log: Arc<Mutex<Vec<Vec<factstr::EventRecord>>>>,
 ) -> factstr::HandleStream {
-    Arc::new(move |event_records| {
-        delivery_log
-            .lock()
-            .expect("delivery log lock should succeed")
-            .push(event_records);
-        Ok(())
+    factstr::HandleStream::new(move |event_records| {
+        let delivery_log = Arc::clone(&delivery_log);
+
+        async move {
+            delivery_log
+                .lock()
+                .expect("delivery log lock should succeed")
+                .push(event_records);
+            Ok(())
+        }
     })
 }
 

@@ -18,4 +18,4 @@ pub use event_store::{EventStore, EventStoreError};
 pub use event_stream::EventStream;
 pub use new_event::NewEvent;
 pub use query_result::QueryResult;
-pub use stream_handler::{HandleStream, StreamHandlerError};
+pub use stream_handler::{HandleStream, StreamHandlerError, StreamHandlerFuture};

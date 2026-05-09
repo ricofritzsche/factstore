@@ -8,11 +8,13 @@ The main use is still the same: a feature slice owns a query model, registers a 
 
 - `stream_all(handle)` observes all future committed batches
 - `stream_to(&EventQuery, handle)` observes only future committed facts that match that query
+- `HandleStream::new(move |batch| async move { ... })` registers an async-capable handler
 - notifications happen only after successful persistence
 - each committed append batch is delivered as one batch
 - mixed committed batches are delivered as one filtered batch when matches exist
 - delivery order follows committed global sequence order
 - failed conditional append emits nothing
+- live handler failure does not roll back append success
 - `EventStream::unsubscribe()` stops future deliveries
 - a batch already snapshotted for asynchronous delivery may still arrive after `unsubscribe()`
 
@@ -20,6 +22,9 @@ The main use is still the same: a feature slice owns a query model, registers a 
 
 - `stream_all_durable(&DurableStream, handle)` resumes from that durable stream's stored cursor, replays committed batches after it, then continues with future committed batches
 - `stream_to_durable(&DurableStream, &EventQuery, handle)` does the same with filtering for the facts relevant to that durable stream
+- durable replay awaits the handler future for each delivered batch
+- the durable cursor advances only after the handler succeeds
+- handler error or panic leaves the durable cursor at the last successfully delivered sequence
 - replay starts strictly after the stored cursor
 - replay uses ascending committed order
 - replay/live transition has no duplicates or gaps
@@ -55,6 +60,6 @@ A feature slice can:
 - define an `EventQuery` for the facts that should update that model
 - call `stream_to(...)` once for future-only projection updates
 - call `stream_to_durable(...)` when it needs persisted replay/catch-up
-- update its own query model from each delivered committed batch
+- update its own query model from each delivered committed batch and await any async persistence before durable delivery is acknowledged
 
 This keeps unrelated facts out of that feature slice by contract instead of by ad-hoc manual filtering after delivery.

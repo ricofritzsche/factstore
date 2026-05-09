@@ -37,7 +37,7 @@ The core crate stays independent of those implementations.
 
 ```toml
 [dependencies]
-factstr = "0.4.1"
+factstr = "0.5.0"
 ```
 
 Use the GitHub repository when you want to work on FACTSTR itself or test unreleased changes before a crates.io release.
@@ -107,7 +107,11 @@ If the context changed, the store returns a conditional append conflict instead 
 
 Live streams observe future committed batches.
 
-Durable streams replay committed batches after a stored cursor and then continue with future delivery. Durable cursors must not advance past undelivered committed facts.
+Handlers are async-capable through `HandleStream::new(move |batch| async move { ... })`.
+
+Live delivery happens only after persistence succeeds, and handler failure does not roll back append success.
+
+Durable streams replay committed batches after a stored cursor, await handler success for each delivered batch, and then continue with future delivery. Durable cursors must not advance past undelivered committed facts.
 
 ## Contract types
 

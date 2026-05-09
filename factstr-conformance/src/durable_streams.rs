@@ -1,13 +1,15 @@
 use factstr::{
-    DurableStream, EventFilter, EventQuery, EventRecord, EventStore, EventStoreError, NewEvent,
-    StreamHandlerError,
+    DurableStream, EventFilter, EventQuery, EventRecord, EventStore, EventStoreError, HandleStream,
+    NewEvent, StreamHandlerError,
 };
 use serde_json::json;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::support::{delivered_batches, recording_handle, wait_for_delivery_count};
+use crate::support::{
+    delivered_batches, panicking_handle, recording_handle, wait_for_delivery_count,
+};
 
 pub fn durable_stream_state_is_reused_for_the_same_durable_stream_id<S, F>(create_store: F)
 where
@@ -212,6 +214,101 @@ where
     assert_eq!(batch_sequences(&delivered_batches), vec![vec![1], vec![2]]);
 }
 
+pub fn durable_replay_waits_for_handler_completion_before_advancing_cursor<S, F>(create_store: F)
+where
+    S: EventStore,
+    F: Fn() -> S,
+{
+    let store = create_store();
+    let delivery_log = Arc::new(Mutex::new(Vec::new()));
+    let (first_handler_started_sender, first_handler_started_receiver) = mpsc::channel();
+    let release_first_handler = Arc::new((Mutex::new(false), Condvar::new()));
+
+    store
+        .append(vec![NewEvent::new(
+            "account-opened",
+            json!({ "accountId": "a1" }),
+        )])
+        .expect("first historical append should succeed");
+    store
+        .append(vec![NewEvent::new(
+            "account-renamed",
+            json!({ "accountId": "a1", "name": "Primary" }),
+        )])
+        .expect("second historical append should succeed");
+
+    let watcher = thread::spawn({
+        let delivery_log = Arc::clone(&delivery_log);
+        let release_first_handler = Arc::clone(&release_first_handler);
+        move || {
+            first_handler_started_receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("first durable replay handler should start");
+
+            let deadline = Instant::now() + Duration::from_millis(100);
+            while Instant::now() < deadline {
+                let delivered_batches = delivered_batches(&delivery_log);
+                assert_eq!(
+                    batch_sequences(&delivered_batches),
+                    vec![vec![1]],
+                    "second replay batch should not be delivered before the first handler completes"
+                );
+                thread::sleep(Duration::from_millis(5));
+            }
+
+            let (lock, condvar) = &*release_first_handler;
+            *lock.lock().expect("handler gate lock should succeed") = true;
+            condvar.notify_all();
+        }
+    });
+
+    let _stream = store
+        .stream_all_durable(
+            &DurableStream::new("await-first-handler"),
+            HandleStream::new({
+                let delivery_log = Arc::clone(&delivery_log);
+                let release_first_handler = Arc::clone(&release_first_handler);
+                move |committed_batch| {
+                    let delivery_log = Arc::clone(&delivery_log);
+                    let release_first_handler = Arc::clone(&release_first_handler);
+                    let first_handler_started_sender = first_handler_started_sender.clone();
+
+                    async move {
+                        let first_sequence_number = committed_batch
+                            .first()
+                            .expect("delivered batch should not be empty")
+                            .sequence_number;
+
+                        delivery_log
+                            .lock()
+                            .expect("delivery log lock should succeed")
+                            .push(committed_batch);
+
+                        if first_sequence_number == 1 {
+                            let _ = first_handler_started_sender.send(());
+                            let (lock, condvar) = &*release_first_handler;
+                            let mut released =
+                                lock.lock().expect("handler gate lock should succeed");
+                            while !*released {
+                                released = condvar
+                                    .wait(released)
+                                    .expect("handler gate wait should succeed");
+                            }
+                        }
+
+                        Ok(())
+                    }
+                }
+            }),
+        )
+        .expect("durable stream should succeed");
+
+    watcher.join().expect("watcher thread should finish");
+
+    let delivered_batches = wait_for_delivery_count(&delivery_log, 2);
+    assert_eq!(batch_sequences(&delivered_batches), vec![vec![1], vec![2]]);
+}
+
 pub fn durable_stream_replay_failure_does_not_advance_cursor_and_retry_replays_from_same_position<
     S,
     F,
@@ -233,7 +330,7 @@ pub fn durable_stream_replay_failure_does_not_advance_cursor_and_retry_replays_f
 
     let error = match store.stream_all_durable(
         &DurableStream::new("failing-replay-stream"),
-        Arc::new(|_| Err(StreamHandlerError::new("expected replay failure"))),
+        HandleStream::new(|_| async { Err(StreamHandlerError::new("expected replay failure")) }),
     ) {
         Ok(_) => panic!("failing replay should return an error"),
         Err(error) => error,
@@ -274,7 +371,7 @@ pub fn durable_replay_panic_does_not_advance_cursor_and_retry_replays_from_same_
 
     let error = match store.stream_all_durable(
         &DurableStream::new("panicking-replay-stream"),
-        Arc::new(|_| -> Result<(), StreamHandlerError> { panic!("expected replay panic") }),
+        panicking_handle(),
     ) {
         Ok(_) => panic!("panicking replay should return an error"),
         Err(error) => error,
@@ -309,7 +406,9 @@ pub fn durable_live_failure_does_not_roll_back_append_success_or_advance_cursor<
     let _failed_stream = store
         .stream_all_durable(
             &DurableStream::new("failing-live-stream"),
-            Arc::new(|_| Err(StreamHandlerError::new("expected live delivery failure"))),
+            HandleStream::new(|_| async {
+                Err(StreamHandlerError::new("expected live delivery failure"))
+            }),
         )
         .expect("durable stream should register");
 

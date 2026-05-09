@@ -9,17 +9,25 @@ pub(crate) fn new_event(event_type: &str, payload: Value) -> NewEvent {
 }
 
 pub(crate) fn recording_handle(delivery_log: Arc<Mutex<Vec<Vec<EventRecord>>>>) -> HandleStream {
-    Arc::new(move |event_records| {
-        delivery_log
-            .lock()
-            .expect("delivery log lock should succeed")
-            .push(event_records);
-        Ok(())
+    HandleStream::new(move |event_records| {
+        let delivery_log = Arc::clone(&delivery_log);
+
+        async move {
+            delivery_log
+                .lock()
+                .expect("delivery log lock should succeed")
+                .push(event_records);
+            Ok(())
+        }
     })
 }
 
 pub(crate) fn failing_handle() -> HandleStream {
-    Arc::new(|_| Err(StreamHandlerError::new("expected test handler failure")))
+    HandleStream::new(|_| async { Err(StreamHandlerError::new("expected test handler failure")) })
+}
+
+pub(crate) fn panicking_handle() -> HandleStream {
+    HandleStream::new(|_| async move { panic!("expected replay panic") })
 }
 
 pub(crate) fn delivered_batches(

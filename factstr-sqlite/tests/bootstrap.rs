@@ -106,9 +106,12 @@ fn no_runtime_methods_remain_deferred_after_phase_d() {
     let event_store: &dyn EventStore = &store;
 
     let _subscription = event_store
-        .stream_all(std::sync::Arc::new(|_| Ok(())))
+        .stream_all(factstr::HandleStream::new(|_| async { Ok(()) }))
         .expect("subscribe_all should succeed");
     let _filtered_subscription = event_store
-        .stream_to(&EventQuery::all(), std::sync::Arc::new(|_| Ok(())))
+        .stream_to(
+            &EventQuery::all(),
+            factstr::HandleStream::new(|_| async { Ok(()) }),
+        )
         .expect("subscribe_to should succeed");
 }

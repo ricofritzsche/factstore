@@ -168,12 +168,16 @@ fn assert_invalid_database_name(database_name: &str) {
 fn recording_handle(
     delivery_log: Arc<Mutex<Vec<Vec<factstr::EventRecord>>>>,
 ) -> factstr::HandleStream {
-    Arc::new(move |event_records| {
-        delivery_log
-            .lock()
-            .expect("delivery log lock should succeed")
-            .push(event_records);
-        Ok(())
+    factstr::HandleStream::new(move |event_records| {
+        let delivery_log = Arc::clone(&delivery_log);
+
+        async move {
+            delivery_log
+                .lock()
+                .expect("delivery log lock should succeed")
+                .push(event_records);
+            Ok(())
+        }
     })
 }
 
