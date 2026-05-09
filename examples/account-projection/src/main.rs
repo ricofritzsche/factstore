@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use factstr::{
-    EventFilter, EventQuery, EventRecord, EventStore, NewEvent, StreamHandlerError,
+    EventFilter, EventQuery, EventRecord, EventStore, HandleStream, NewEvent,
 };
 use factstr_memory::MemoryStore;
 use serde_json::json;
@@ -46,19 +46,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "account-opened",
             "account-renamed",
         ])]),
-        Arc::new({
+        HandleStream::new({
             let projection = Arc::clone(&projection);
             move |committed_batch| {
-                projection
-                    .lock()
-                    .expect("projection lock should succeed")
-                    .apply_committed_batch(&committed_batch);
+                let projection = Arc::clone(&projection);
+                let batch_applied_sender = batch_applied_sender.clone();
 
-                batch_applied_sender
-                    .send(committed_batch.len())
-                    .expect("example batch signal should succeed");
+                async move {
+                    projection
+                        .lock()
+                        .expect("projection lock should succeed")
+                        .apply_committed_batch(&committed_batch);
 
-                Ok::<(), StreamHandlerError>(())
+                    batch_applied_sender
+                        .send(committed_batch.len())
+                        .expect("example batch signal should succeed");
+
+                    Ok(())
+                }
             }
         }),
     )?;

@@ -19,7 +19,7 @@
 //!   wait until the projection has observed their committed batch
 
 use crate::features::open_account::ensure_account_exists;
-use factstr::{EventQuery, EventRecord, EventStore, EventStream, StreamHandlerError};
+use factstr::{EventQuery, EventRecord, EventStore, EventStream, HandleStream, StreamHandlerError};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::{Arc, Condvar, Mutex};
@@ -79,9 +79,13 @@ impl BalanceProjectionRuntime {
 
         let stream = store.stream_to(
             &projection_query(),
-            Arc::new(move |committed_batch| {
-                apply_or_buffer_batch(&handler_state, committed_batch)
-                    .map_err(|error| StreamHandlerError::new(error.to_string()))
+            HandleStream::new(move |committed_batch| {
+                let handler_state = Arc::clone(&handler_state);
+
+                async move {
+                    apply_or_buffer_batch(&handler_state, committed_batch)
+                        .map_err(|error| StreamHandlerError::new(error.to_string()))
+                }
             }),
         )?;
 

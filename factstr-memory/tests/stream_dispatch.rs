@@ -6,7 +6,7 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
-use factstr::{EventStore, NewEvent, StreamHandlerError};
+use factstr::{EventStore, HandleStream, NewEvent};
 use factstr_memory::MemoryStore;
 use serde_json::json;
 
@@ -17,21 +17,26 @@ fn blocking_handler_does_not_block_append_completion() {
     let release_handler = Arc::new((Mutex::new(false), Condvar::new()));
 
     let _subscription = store
-        .stream_all(Arc::new({
+        .stream_all(HandleStream::new({
             let release_handler = Arc::clone(&release_handler);
             move |event_records| {
-                assert_eq!(event_records.len(), 1);
-                let _ = handler_started_sender.send(());
+                let release_handler = Arc::clone(&release_handler);
+                let handler_started_sender = handler_started_sender.clone();
 
-                let (lock, condvar) = &*release_handler;
-                let mut released = lock.lock().expect("handler gate lock should succeed");
-                while !*released {
-                    released = condvar
-                        .wait(released)
-                        .expect("handler gate wait should succeed");
+                async move {
+                    assert_eq!(event_records.len(), 1);
+                    let _ = handler_started_sender.send(());
+
+                    let (lock, condvar) = &*release_handler;
+                    let mut released = lock.lock().expect("handler gate lock should succeed");
+                    while !*released {
+                        released = condvar
+                            .wait(released)
+                            .expect("handler gate wait should succeed");
+                    }
+
+                    Ok(())
                 }
-
-                Ok::<(), StreamHandlerError>(())
             }
         }))
         .expect("subscribe_all should succeed");
@@ -73,28 +78,35 @@ fn already_snapshotted_delivery_may_arrive_after_unsubscribe_but_future_commits_
     let release_first_handler = Arc::new((Mutex::new(false), Condvar::new()));
 
     let subscription = store
-        .stream_all(Arc::new({
+        .stream_all(HandleStream::new({
             let delivered_batches = Arc::clone(&delivered_batches);
             let invocation_count = Arc::clone(&invocation_count);
             let release_first_handler = Arc::clone(&release_first_handler);
             move |event_records| {
-                delivered_batches
-                    .lock()
-                    .expect("delivery log lock should succeed")
-                    .push(event_records);
+                let delivered_batches = Arc::clone(&delivered_batches);
+                let invocation_count = Arc::clone(&invocation_count);
+                let release_first_handler = Arc::clone(&release_first_handler);
+                let first_handler_started_sender = first_handler_started_sender.clone();
 
-                if invocation_count.fetch_add(1, Ordering::SeqCst) == 0 {
-                    let _ = first_handler_started_sender.send(());
-                    let (lock, condvar) = &*release_first_handler;
-                    let mut released = lock.lock().expect("handler gate lock should succeed");
-                    while !*released {
-                        released = condvar
-                            .wait(released)
-                            .expect("handler gate wait should succeed");
+                async move {
+                    delivered_batches
+                        .lock()
+                        .expect("delivery log lock should succeed")
+                        .push(event_records);
+
+                    if invocation_count.fetch_add(1, Ordering::SeqCst) == 0 {
+                        let _ = first_handler_started_sender.send(());
+                        let (lock, condvar) = &*release_first_handler;
+                        let mut released = lock.lock().expect("handler gate lock should succeed");
+                        while !*released {
+                            released = condvar
+                                .wait(released)
+                                .expect("handler gate wait should succeed");
+                        }
                     }
-                }
 
-                Ok::<(), StreamHandlerError>(())
+                    Ok(())
+                }
             }
         }))
         .expect("subscribe_all should succeed");

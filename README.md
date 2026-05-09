@@ -15,31 +15,31 @@ Core contract:
 
 ```toml
 [dependencies]
-factstr = "0.4.1"
+factstr = "0.5.0"
 ```
 
 Memory:
 
 ```toml
 [dependencies]
-factstr = "0.4.1"
-factstr-memory = "0.4.1"
+factstr = "0.5.0"
+factstr-memory = "0.5.0"
 ```
 
 SQLite:
 
 ```toml
 [dependencies]
-factstr = "0.4.1"
-factstr-sqlite = "0.4.1"
+factstr = "0.5.0"
+factstr-sqlite = "0.5.0"
 ```
 
 PostgreSQL:
 
 ```toml
 [dependencies]
-factstr = "0.4.1"
-factstr-postgres = "0.4.1"
+factstr = "0.5.0"
+factstr-postgres = "0.5.0"
 ```
 
 ### Node.js and TypeScript
@@ -53,8 +53,9 @@ npm install @factstr/factstr-node
 - append-only event records with global sequence numbers
 - conditional append through command context consistency
 - ordered queries with explicit read cursor and context version meanings
-- live streams that deliver committed batches after persistence succeeds
-- durable streams that replay after a stored cursor and then continue live
+- async-capable stream handlers for live and durable delivery
+- live streams that deliver committed batches only after persistence succeeds
+- durable streams that replay after a stored cursor, await handler success, and then continue live
 - Memory, SQLite, and PostgreSQL store implementations behind one Rust contract
 - Node.js bindings with TypeScript types for Memory, SQLite, and PostgreSQL
 

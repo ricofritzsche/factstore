@@ -54,8 +54,12 @@ impl Error for EventStoreError {}
 /// - `stream_to` uses `EventQuery` matching semantics to deliver only the
 ///   matching facts from each future committed batch, preserving their original
 ///   committed order inside one filtered delivered batch
+/// - stream handlers are async-capable and are awaited by the delivery
+///   mechanism, not by append correctness
 /// - durable streams persist their last processed sequence number
 /// - durable replay starts strictly after the stored durable cursor
+/// - durable replay advances its cursor only after the handler future
+///   succeeds for that delivered batch
 /// - durable replay transitions into future committed stream delivery without
 ///   duplicates or gaps
 /// - durable cursors must not advance past undelivered committed facts

@@ -141,9 +141,13 @@ impl Drop for JsStreamCallback {
 pub(crate) fn handle_stream_from_js_function(env: Env, handle: JsFunction) -> Result<HandleStream> {
     let stream_callback = Arc::new(JsStreamCallback::new(env, handle)?);
 
-    Ok(Arc::new(move |event_records: Vec<FactstrEventRecord>| {
-        stream_callback.dispatch(event_records)
-    }))
+    Ok(HandleStream::new(
+        move |event_records: Vec<FactstrEventRecord>| {
+            let stream_callback = Arc::clone(&stream_callback);
+
+            async move { stream_callback.dispatch(event_records) }
+        },
+    ))
 }
 
 fn event_records_to_js_array(env: &Env, event_records: Vec<EventRecord>) -> Result<JsObject> {

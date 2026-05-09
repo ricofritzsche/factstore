@@ -16,6 +16,7 @@ use sqlx::{
 };
 use time::OffsetDateTime;
 use tokio::runtime::Builder;
+use tokio::runtime::Runtime;
 use url::Url;
 
 use crate::query_match::matches_query;
@@ -418,6 +419,7 @@ impl PostgresStore {
                 return Err(error);
             }
         };
+        let delivery_runtime = build_delivery_runtime("factstr-postgres durable replay")?;
 
         for replay_batch in replay_batches {
             let pending_delivery = PendingDelivery {
@@ -428,7 +430,7 @@ impl PostgresStore {
                 handle: handle.clone(),
             };
 
-            match self.process_durable_delivery(pending_delivery) {
+            match self.process_durable_delivery(&delivery_runtime, pending_delivery) {
                 Ok(true) => {}
                 Ok(false) => {
                     self.cleanup_durable_subscription(replay_state.subscription_id);
@@ -464,9 +466,10 @@ impl PostgresStore {
 
     fn process_durable_delivery(
         &self,
+        delivery_runtime: &Runtime,
         pending_delivery: PendingDelivery,
     ) -> Result<bool, EventStoreError> {
-        match pending_delivery.deliver() {
+        match pending_delivery.deliver(delivery_runtime) {
             DeliveryOutcome::Succeeded {
                 durable_stream_id,
                 last_processed_sequence_number,
@@ -751,7 +754,7 @@ fn run_delivery_thread(
         match delivery_command {
             DeliveryCommand::Deliver(pending_deliveries) => {
                 for pending_delivery in pending_deliveries {
-                    match pending_delivery.deliver() {
+                    match pending_delivery.deliver(&runtime) {
                         DeliveryOutcome::Succeeded {
                             subscription_id,
                             durable_stream_id,
@@ -813,6 +816,20 @@ fn backend_failure_message(message: impl Into<String>) -> EventStoreError {
     EventStoreError::BackendFailure {
         message: message.into(),
     }
+}
+
+fn build_delivery_runtime(operation: &'static str) -> Result<Runtime, EventStoreError> {
+    Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(sqlx_io_error)
+        .map_err(PostgresStore::backend_failure)
+        .map_err(|error| match error {
+            EventStoreError::BackendFailure { message } => EventStoreError::BackendFailure {
+                message: format!("{operation}: {message}"),
+            },
+            other => other,
+        })
 }
 
 fn bootstrap_database(options: &PostgresBootstrapOptions) -> Result<(), EventStoreError> {
