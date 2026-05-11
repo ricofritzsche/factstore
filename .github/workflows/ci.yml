@@ -44,3 +44,6 @@ jobs:
 
       - name: Check factstr-node version sync
         run: node scripts/check-node-version-sync.mjs
+
+      - name: Check Rust README version sync
+        run: node scripts/prepare-rust-readmes.mjs --check
