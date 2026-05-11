@@ -154,6 +154,45 @@ Node stream callbacks may return `void`, `boolean`, `Promise<void>`, or
 
 Live callback failure still does not roll back a successful append.
 
+## Live vs Durable Stream Registration
+
+`streamAll(...)` and `streamTo(...)` register live streams. They observe only future committed batches after registration becomes active. Registration is synchronous because no replay happens during registration.
+
+```ts
+async function updateProjection(events: EventRecord[]): Promise<void> {
+  console.log('persist projection updates', events);
+}
+
+const subscription = store.streamAll(async (events) => {
+  await updateProjection(events);
+});
+```
+
+The callback may return a Promise, but append success is not rolled back if the callback fails.
+
+`streamAllDurable(...)` and `streamToDurable(...)` register durable streams. They may replay existing committed batches before returning the subscription. Registration is asynchronous because FACTSTR waits for replay callback success before advancing the durable cursor.
+
+```ts
+const subscription = await store.streamAllDurable(
+  { name: 'inventory-projector' },
+  async (events) => {
+    await updateProjection(events);
+  },
+);
+```
+
+For durable streams, the cursor advances only after the callback succeeds. If the callback throws, returns `false`, rejects, or resolves to `false`, the cursor does not advance.
+
+API summary:
+
+```ts
+streamAll(handle): EventStreamSubscription
+streamTo(query, handle): EventStreamSubscription
+
+streamAllDurable(name, handle): Promise<EventStreamSubscription>
+streamToDurable(name, query, handle): Promise<EventStreamSubscription>
+```
+
 ## Durable Streams
 
 ```ts
