@@ -1,8 +1,8 @@
 use std::ptr;
 use std::result::Result as StdResult;
 use std::sync::Arc;
-use std::sync::mpsc::sync_channel;
-use std::thread::{self, ThreadId};
+use std::sync::Mutex;
+use std::sync::mpsc::{SyncSender, sync_channel};
 
 use factstr::{EventRecord as FactstrEventRecord, HandleStream, StreamHandlerError};
 use napi::bindgen_prelude::{FromNapiValue, ToNapiValue};
@@ -46,12 +46,16 @@ impl Drop for JsFunctionReference {
 struct JsStreamCallback {
     env: sys::napi_env,
     trampoline_ref: sys::napi_ref,
-    registration_thread_id: ThreadId,
-    threadsafe_handle: ThreadsafeFunction<Vec<EventRecord>, ErrorStrategy::CalleeHandled>,
+    threadsafe_handle: ThreadsafeFunction<PendingStreamCallbackInvocation, ErrorStrategy::Fatal>,
 }
 
 unsafe impl Send for JsStreamCallback {}
 unsafe impl Sync for JsStreamCallback {}
+
+struct PendingStreamCallbackInvocation {
+    event_records: Vec<EventRecord>,
+    completion_sender: Arc<Mutex<Option<SyncSender<bool>>>>,
+}
 
 impl JsStreamCallback {
     fn new(env: Env, handle: JsFunction) -> Result<Self> {
@@ -59,49 +63,61 @@ impl JsStreamCallback {
         let callback_ref = Arc::new(JsFunctionReference::new(env.raw(), raw_function)?);
         let trampoline = create_stream_callback_trampoline(env, callback_ref.clone())?;
         let raw_trampoline = unsafe { trampoline.raw() };
-        let threadsafe_handle: ThreadsafeFunction<Vec<EventRecord>, ErrorStrategy::CalleeHandled> =
-            trampoline.create_threadsafe_function(
-                0,
-                |context: ThreadSafeCallContext<Vec<EventRecord>>| {
-                    let js_event_records = event_records_to_js_array(&context.env, context.value)?;
-                    Ok(vec![js_event_records])
-                },
-            )?;
+        let threadsafe_handle: ThreadsafeFunction<
+            PendingStreamCallbackInvocation,
+            ErrorStrategy::Fatal,
+        > = trampoline.create_threadsafe_function(
+            0,
+            |context: ThreadSafeCallContext<PendingStreamCallbackInvocation>| {
+                let js_event_records =
+                    event_records_to_js_array(&context.env, context.value.event_records)?;
+                let completion_callback = create_stream_completion_callback(
+                    context.env,
+                    context.value.completion_sender,
+                )?;
+                let js_event_records = js_event_records.into_unknown();
+                let completion_callback =
+                    unsafe { JsUnknown::from_raw(context.env.raw(), completion_callback.raw()) }?;
+                Ok(vec![js_event_records, completion_callback])
+            },
+        )?;
 
         Ok(Self {
             env: env.raw(),
             trampoline_ref: create_js_reference(env.raw(), raw_trampoline)?,
-            registration_thread_id: thread::current().id(),
             threadsafe_handle,
         })
     }
 
-    fn invoke_direct(&self, node_event_records: Vec<EventRecord>) -> Result<bool> {
-        let env = unsafe { Env::from_raw(self.env) };
-        let function = load_referenced_function(self.env, self.trampoline_ref)?;
-        let js_event_records = event_records_to_js_array(&env, node_event_records)?;
-        let return_value = function.call(None, &[js_event_records])?;
-
-        callback_completed_successfully(self.env, return_value)
-    }
-
     fn invoke_via_threadsafe_function(&self, node_event_records: Vec<EventRecord>) -> Result<bool> {
-        let (sender, receiver) = sync_channel(1);
-        let status = self.threadsafe_handle.call_with_return_value(
-            Ok(node_event_records),
-            ThreadsafeFunctionCallMode::Blocking,
-            move |callback_succeeded| {
-                sender
-                    .send(callback_succeeded)
-                    .map_err(|error| napi::Error::from_reason(error.to_string()))
-            },
-        );
+        let (setup_sender, setup_receiver) = sync_channel(1);
+        let (completion_sender, completion_receiver) = sync_channel(1);
+        let invocation = PendingStreamCallbackInvocation {
+            event_records: node_event_records,
+            completion_sender: Arc::new(Mutex::new(Some(completion_sender))),
+        };
+        let status = self
+            .threadsafe_handle
+            .call_with_return_value::<JsUnknown, _>(
+                invocation,
+                ThreadsafeFunctionCallMode::Blocking,
+                move |_return_value| {
+                    setup_sender
+                        .send(())
+                        .map_err(|error| napi::Error::from_reason(error.to_string()))
+                        .map(|_| ())
+                },
+            );
 
         if status != Status::Ok {
             return Err(napi::Error::from_status(status));
         }
 
-        receiver
+        setup_receiver
+            .recv()
+            .map_err(|error| napi::Error::from_reason(error.to_string()))?;
+
+        completion_receiver
             .recv()
             .map_err(|error| napi::Error::from_reason(error.to_string()))
     }
@@ -115,12 +131,9 @@ impl JsStreamCallback {
             .map(|event_record| factstr_interop::InteropEventRecord::from(event_record).into())
             .collect::<Vec<_>>();
 
-        let callback_succeeded = if thread::current().id() == self.registration_thread_id {
-            self.invoke_direct(node_event_records)
-        } else {
-            self.invoke_via_threadsafe_function(node_event_records)
-        }
-        .map_err(|error| StreamHandlerError::new(error.to_string()))?;
+        let callback_succeeded = self
+            .invoke_via_threadsafe_function(node_event_records)
+            .map_err(|error| StreamHandlerError::new(error.to_string()))?;
 
         if callback_succeeded {
             Ok(())
@@ -168,44 +181,97 @@ fn create_stream_callback_trampoline(
     callback_ref: Arc<JsFunctionReference>,
 ) -> Result<JsFunction> {
     env.create_function_from_closure("factstrStreamCallback", move |ctx: CallContext| {
-        let callback_succeeded =
-            invoke_user_stream_callback(&ctx, callback_ref.as_ref()).unwrap_or(false);
-        ctx.env.get_boolean(callback_succeeded)
+        let _ = invoke_user_stream_callback(&ctx, callback_ref.as_ref());
+        ctx.env.get_undefined()
     })
 }
 
 fn invoke_user_stream_callback(
     ctx: &CallContext<'_>,
     callback_ref: &JsFunctionReference,
-) -> Result<bool> {
-    let callback = callback_ref.load()?;
-    let js_event_records = match stream_callback_events_argument(ctx)? {
-        Some(js_event_records) => js_event_records,
-        None => return Ok(false),
+) -> Result<()> {
+    let complete = match stream_callback_completion_argument(ctx) {
+        Ok(complete) => complete,
+        Err(_) => return Ok(()),
+    };
+    let complete_ref =
+        match JsFunctionReference::new(ctx.env.raw(), unsafe { complete.raw() }).map(Arc::new) {
+            Ok(complete_ref) => complete_ref,
+            Err(_) => {
+                let _ = complete_stream_callback(ctx.env.raw(), &complete, false);
+                return Ok(());
+            }
+        };
+    let callback = match callback_ref.load() {
+        Ok(callback) => callback,
+        Err(_) => {
+            let _ = complete_stream_callback(ctx.env.raw(), &complete, false);
+            return Ok(());
+        }
+    };
+    let js_event_records = match stream_callback_events_argument(ctx) {
+        Ok(Some(js_event_records)) => js_event_records,
+        Ok(None) | Err(_) => {
+            let _ = complete_stream_callback(ctx.env.raw(), &complete, false);
+            return Ok(());
+        }
     };
 
     let return_value = match callback.call(None, &[js_event_records]) {
         Ok(return_value) => return_value,
-        Err(_) => return Ok(false),
+        Err(_) => {
+            let _ = complete_stream_callback(ctx.env.raw(), &complete, false);
+            return Ok(());
+        }
     };
 
-    callback_completed_successfully(ctx.env.raw(), return_value)
+    match thenable_from_return_value(*ctx.env, &return_value) {
+        Ok(Some((thenable, then_function))) => {
+            let on_fulfilled =
+                match create_thenable_resolution_callback(*ctx.env, Arc::clone(&complete_ref)) {
+                    Ok(on_fulfilled) => on_fulfilled,
+                    Err(_) => {
+                        let _ = complete_stream_callback(ctx.env.raw(), &complete, false);
+                        return Ok(());
+                    }
+                };
+            let on_rejected = match create_thenable_rejection_callback(*ctx.env, complete_ref) {
+                Ok(on_rejected) => on_rejected,
+                Err(_) => {
+                    let _ = complete_stream_callback(ctx.env.raw(), &complete, false);
+                    return Ok(());
+                }
+            };
+            if then_function
+                .call(Some(&thenable), &[on_fulfilled, on_rejected])
+                .is_err()
+            {
+                let _ = complete_stream_callback(ctx.env.raw(), &complete, false);
+            }
+        }
+        Ok(None) => {
+            let callback_succeeded =
+                callback_completed_successfully(ctx.env.raw(), return_value).unwrap_or(false);
+            let _ = complete_stream_callback(ctx.env.raw(), &complete, callback_succeeded);
+        }
+        Err(_) => {
+            let _ = complete_stream_callback(ctx.env.raw(), &complete, false);
+        }
+    }
+
+    Ok(())
 }
 
 fn stream_callback_events_argument(ctx: &CallContext<'_>) -> Result<Option<JsObject>> {
-    if ctx.length == 0 {
+    if ctx.length < 2 {
         return Ok(None);
     }
 
-    if ctx.length == 1 {
-        return ctx.get::<JsObject>(0).map(Some);
-    }
+    ctx.get::<JsObject>(0).map(Some)
+}
 
-    let error_value = ctx.get::<JsUnknown>(0)?;
-    match error_value.get_type()? {
-        ValueType::Null | ValueType::Undefined => ctx.get::<JsObject>(1).map(Some),
-        _ => Ok(None),
-    }
+fn stream_callback_completion_argument(ctx: &CallContext<'_>) -> Result<JsFunction> {
+    ctx.get::<JsFunction>(1)
 }
 
 fn callback_completed_successfully(env: sys::napi_env, return_value: JsUnknown) -> Result<bool> {
@@ -213,6 +279,112 @@ fn callback_completed_successfully(env: sys::napi_env, return_value: JsUnknown) 
         ValueType::Boolean => unsafe { bool::from_napi_value(env, return_value.raw()) },
         _ => Ok(true),
     }
+}
+
+fn complete_stream_callback(
+    env: sys::napi_env,
+    complete: &JsFunction,
+    callback_succeeded: bool,
+) -> Result<()> {
+    let env = unsafe { Env::from_raw(env) };
+    let js_callback_succeeded = env.get_boolean(callback_succeeded)?;
+    complete.call(None, &[js_callback_succeeded])?;
+    Ok(())
+}
+
+fn complete_stream_callback_with_reference(
+    env: sys::napi_env,
+    complete_ref: &JsFunctionReference,
+    callback_succeeded: bool,
+) -> Result<()> {
+    let complete = complete_ref.load()?;
+    let env = unsafe { Env::from_raw(env) };
+    let js_callback_succeeded = env.get_boolean(callback_succeeded)?;
+    complete.call(None, &[js_callback_succeeded])?;
+    Ok(())
+}
+
+fn thenable_from_return_value(
+    env: Env,
+    return_value: &JsUnknown,
+) -> Result<Option<(JsObject, JsFunction)>> {
+    match return_value.get_type()? {
+        ValueType::Object | ValueType::Function => {
+            let thenable = unsafe { JsUnknown::from_raw(env.raw(), return_value.raw()) }?
+                .coerce_to_object()?;
+            if !thenable.has_named_property("then")? {
+                return Ok(None);
+            }
+
+            let then_value = thenable.get_named_property::<JsUnknown>("then")?;
+            if then_value.get_type()? != ValueType::Function {
+                return Ok(None);
+            }
+
+            let then_function = unsafe { JsFunction::from_raw(env.raw(), then_value.raw()) }?;
+            Ok(Some((thenable, then_function)))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn create_thenable_resolution_callback(
+    env: Env,
+    complete_ref: Arc<JsFunctionReference>,
+) -> Result<JsFunction> {
+    env.create_function_from_closure("factstrStreamCallbackResolved", move |ctx: CallContext| {
+        let callback_succeeded = if ctx.length == 0 {
+            true
+        } else {
+            match ctx.get::<JsUnknown>(0) {
+                Ok(return_value) => {
+                    callback_completed_successfully(ctx.env.raw(), return_value).unwrap_or(false)
+                }
+                Err(_) => false,
+            }
+        };
+        let _ = complete_stream_callback_with_reference(
+            ctx.env.raw(),
+            complete_ref.as_ref(),
+            callback_succeeded,
+        );
+        ctx.env.get_undefined()
+    })
+}
+
+fn create_thenable_rejection_callback(
+    env: Env,
+    complete_ref: Arc<JsFunctionReference>,
+) -> Result<JsFunction> {
+    env.create_function_from_closure("factstrStreamCallbackRejected", move |ctx: CallContext| {
+        let _ =
+            complete_stream_callback_with_reference(ctx.env.raw(), complete_ref.as_ref(), false);
+        ctx.env.get_undefined()
+    })
+}
+
+fn create_stream_completion_callback(
+    env: Env,
+    completion_sender: Arc<Mutex<Option<SyncSender<bool>>>>,
+) -> Result<JsFunction> {
+    env.create_function_from_closure("factstrStreamCallbackComplete", move |ctx: CallContext| {
+        let callback_succeeded = if ctx.length == 0 {
+            false
+        } else {
+            match ctx.get::<JsUnknown>(0) {
+                Ok(value) => callback_completed_successfully(ctx.env.raw(), value).unwrap_or(false),
+                Err(_) => false,
+            }
+        };
+
+        if let Ok(mut completion_sender) = completion_sender.lock() {
+            if let Some(completion_sender) = completion_sender.take() {
+                let _ = completion_sender.send(callback_succeeded);
+            }
+        }
+
+        ctx.env.get_undefined()
+    })
 }
 
 fn create_js_reference(env: sys::napi_env, value: sys::napi_value) -> Result<sys::napi_ref> {

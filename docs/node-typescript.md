@@ -149,6 +149,11 @@ filteredSubscription.unsubscribe();
 
 `streamAll(...)` observes future committed batches. `streamTo(...)` observes future committed facts that match the given query.
 
+Node stream callbacks may return `void`, `boolean`, `Promise<void>`, or
+`Promise<boolean>`.
+
+Live callback failure still does not roll back a successful append.
+
 ## Durable Streams
 
 ```ts
@@ -160,14 +165,31 @@ import {
 const store = new FactstrSqliteStore('./factstr.sqlite');
 const durableStream: DurableStream = { name: 'inventory-projector' };
 
-const subscription = store.streamAllDurable(durableStream, (events) => {
-  console.log('replayed or live batch', events);
-});
+const subscription = await store.streamAllDurable(
+  durableStream,
+  async (events) => {
+    console.log('replayed or live batch', events);
+  },
+);
 
 subscription.unsubscribe();
 ```
 
-`streamAllDurable(...)` and `streamToDurable(...)` replay committed facts strictly after the stored durable cursor and then continue with future committed delivery.
+`streamAllDurable(...)` and `streamToDurable(...)` replay committed facts
+strictly after the stored durable cursor and then continue with future
+committed delivery.
+
+Durable registration must be awaited. The registration Promise resolves only
+after replay has completed successfully.
+
+Durable cursor advancement waits for callback success. Rejected Promises,
+resolved `false`, and synchronous throws prevent cursor advancement for that
+delivered batch.
+
+If a durable callback returns a Promise that never settles, FACTSTR keeps
+waiting for that in-flight delivery. `unsubscribe()` stops future deliveries,
+but it does not cancel a callback that is already in flight. The durable
+cursor advances only if that in-flight callback eventually succeeds.
 
 ## BigInt
 

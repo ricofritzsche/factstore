@@ -34,6 +34,8 @@ async function exerciseLiveStore(
   const filteredBatches: EventRecord[][] = [];
   const healthyBatches: EventRecord[][] = [];
   const thrownBatches: EventRecord[][] = [];
+  const asyncResolvedBatches: EventRecord[][] = [];
+  const asyncRejectedBatches: EventRecord[][] = [];
 
   const streamAllSubscription = store.streamAll((events) => {
     streamAllBatches.push(events);
@@ -41,6 +43,19 @@ async function exerciseLiveStore(
   const failingSubscription = store.streamAll((events) => {
     thrownBatches.push(events);
     throw new Error(`${storeName} failing callback should not break append`);
+  });
+  const asyncSubscription = store.streamAll(async (events) => {
+    asyncResolvedBatches.push(events);
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 20);
+    });
+  });
+  const asyncRejectingSubscription = store.streamAll(async (events) => {
+    asyncRejectedBatches.push(events);
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 20);
+    });
+    throw new Error(`${storeName} async failing callback should not break append`);
   });
 
   const appendResult = store.append([
@@ -55,6 +70,8 @@ async function exerciseLiveStore(
 
   await waitForCondition(`${storeName} initial streamAll delivery`, () => streamAllBatches.length === 1);
   await waitForCondition(`${storeName} failing callback delivery`, () => thrownBatches.length === 1);
+  await waitForCondition(`${storeName} async callback delivery`, () => asyncResolvedBatches.length === 1);
+  await waitForCondition(`${storeName} async failing callback delivery`, () => asyncRejectedBatches.length === 1);
   assert(streamAllBatches[0].length === 1, `${storeName} expected one event in the initial batch`);
   assert(streamAllBatches[0][0].sequence_number === 1n, `${storeName} expected initial sequence number 1n`);
 
@@ -94,6 +111,8 @@ async function exerciseLiveStore(
   await waitForCondition(`${storeName} healthy filtered delivery`, () => healthyBatches.length === 1);
   await waitForCondition(`${storeName} second streamAll delivery`, () => streamAllBatches.length === 2);
   await waitForCondition(`${storeName} second failing callback delivery`, () => thrownBatches.length === 2);
+  await waitForCondition(`${storeName} second async callback delivery`, () => asyncResolvedBatches.length === 2);
+  await waitForCondition(`${storeName} second async failing callback delivery`, () => asyncRejectedBatches.length === 2);
 
   assert(streamAllBatches[1].length === 3, `${storeName} expected one committed batch with three events`);
   assert(filteredBatches[0].length === 2, `${storeName} expected filtered batch to contain two events`);
@@ -133,11 +152,15 @@ async function exerciseLiveStore(
   await waitForNoNewDeliveries(`${storeName} filtered conflict deliveries`, () => filteredBatches.length, 1);
   await waitForNoNewDeliveries(`${storeName} healthy conflict deliveries`, () => healthyBatches.length, 1);
   await waitForNoNewDeliveries(`${storeName} failing conflict deliveries`, () => thrownBatches.length, 2);
+  await waitForNoNewDeliveries(`${storeName} async conflict deliveries`, () => asyncResolvedBatches.length, 2);
+  await waitForNoNewDeliveries(`${storeName} async failing conflict deliveries`, () => asyncRejectedBatches.length, 2);
 
   filteredSubscription.unsubscribe();
   healthySubscription.unsubscribe();
   streamAllSubscription.unsubscribe();
   failingSubscription.unsubscribe();
+  asyncSubscription.unsubscribe();
+  asyncRejectingSubscription.unsubscribe();
   filteredSubscription.unsubscribe();
   streamAllSubscription.unsubscribe();
 
@@ -152,4 +175,6 @@ async function exerciseLiveStore(
   await waitForNoNewDeliveries(`${storeName} filtered deliveries after unsubscribe`, () => filteredBatches.length, 1);
   await waitForNoNewDeliveries(`${storeName} healthy deliveries after unsubscribe`, () => healthyBatches.length, 1);
   await waitForNoNewDeliveries(`${storeName} failing deliveries after unsubscribe`, () => thrownBatches.length, 2);
+  await waitForNoNewDeliveries(`${storeName} async deliveries after unsubscribe`, () => asyncResolvedBatches.length, 2);
+  await waitForNoNewDeliveries(`${storeName} async failing deliveries after unsubscribe`, () => asyncRejectedBatches.length, 2);
 }

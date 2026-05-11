@@ -298,7 +298,7 @@ dependencies = [
 
 [[package]]
 name = "factstr-node"
-version = "0.4.1"
+version = "0.5.1"
 dependencies = [
  "factstr",
  "factstr-interop",

@@ -4,16 +4,19 @@ use crate::{
     stream_callback::handle_stream_from_js_function,
     stream_error::napi_error_from_event_store_error,
 };
-use factstr::{EventStore, EventStoreError};
+use factstr::{
+    DurableStream as FactstrDurableStream, EventQuery as FactstrEventQuery, EventStore,
+    EventStoreError, EventStream, HandleStream,
+};
 use factstr_memory::MemoryStore;
-use napi::bindgen_prelude::BigInt;
-use napi::bindgen_prelude::Result;
+use napi::bindgen_prelude::{AsyncTask, BigInt, Result, Task};
 use napi::{Env, JsFunction};
 use napi_derive::napi;
+use std::sync::Arc;
 
 #[napi]
 pub struct FactstrMemoryStore {
-    memory_store: MemoryStore,
+    memory_store: Arc<MemoryStore>,
 }
 
 impl Default for FactstrMemoryStore {
@@ -27,7 +30,7 @@ impl FactstrMemoryStore {
     #[napi(constructor)]
     pub fn new() -> Self {
         Self {
-            memory_store: MemoryStore::new(),
+            memory_store: Arc::new(MemoryStore::new()),
         }
     }
 
@@ -138,15 +141,14 @@ impl FactstrMemoryStore {
         env: Env,
         durable_stream: DurableStream,
         handle: JsFunction,
-    ) -> Result<EventStreamSubscription> {
+    ) -> Result<AsyncTask<MemoryDurableStreamRegistrationTask>> {
         let stream_handle = handle_stream_from_js_function(env, handle)?;
-        let factstr_durable_stream = durable_stream.into_factstr();
-        let event_stream = self
-            .memory_store
-            .stream_all_durable(&factstr_durable_stream, stream_handle)
-            .map_err(napi_error_from_event_store_error)?;
-
-        Ok(EventStreamSubscription::new(event_stream))
+        Ok(AsyncTask::new(MemoryDurableStreamRegistrationTask {
+            memory_store: Arc::clone(&self.memory_store),
+            durable_stream: durable_stream.into_factstr(),
+            event_query: None,
+            stream_handle,
+        }))
     }
 
     #[napi(js_name = "streamToDurable")]
@@ -156,16 +158,47 @@ impl FactstrMemoryStore {
         durable_stream: DurableStream,
         query: EventQuery,
         handle: JsFunction,
-    ) -> Result<EventStreamSubscription> {
+    ) -> Result<AsyncTask<MemoryDurableStreamRegistrationTask>> {
         let stream_handle = handle_stream_from_js_function(env, handle)?;
-        let factstr_durable_stream = durable_stream.into_factstr();
         let interop_query = query.into_interop()?;
-        let event_query = interop_query.into();
-        let event_stream = self
-            .memory_store
-            .stream_to_durable(&factstr_durable_stream, &event_query, stream_handle)
-            .map_err(napi_error_from_event_store_error)?;
+        Ok(AsyncTask::new(MemoryDurableStreamRegistrationTask {
+            memory_store: Arc::clone(&self.memory_store),
+            durable_stream: durable_stream.into_factstr(),
+            event_query: Some(interop_query.into()),
+            stream_handle,
+        }))
+    }
+}
 
-        Ok(EventStreamSubscription::new(event_stream))
+pub struct MemoryDurableStreamRegistrationTask {
+    memory_store: Arc<MemoryStore>,
+    durable_stream: FactstrDurableStream,
+    event_query: Option<FactstrEventQuery>,
+    stream_handle: HandleStream,
+}
+
+impl Task for MemoryDurableStreamRegistrationTask {
+    type Output = EventStream;
+    type JsValue = EventStreamSubscription;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        match &self.event_query {
+            Some(event_query) => self
+                .memory_store
+                .stream_to_durable(
+                    &self.durable_stream,
+                    event_query,
+                    self.stream_handle.clone(),
+                )
+                .map_err(napi_error_from_event_store_error),
+            None => self
+                .memory_store
+                .stream_all_durable(&self.durable_stream, self.stream_handle.clone())
+                .map_err(napi_error_from_event_store_error),
+        }
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(EventStreamSubscription::new(output))
     }
 }

@@ -98,15 +98,7 @@ function wrapStreamHandle(handle) {
     throw new TypeError('stream callback must be a function');
   }
 
-  return (events) => {
-    try {
-      const result = handle(events);
-      return result === false ? false : true;
-    } catch (error) {
-      console.error('factstr-node stream callback failed', error);
-      return false;
-    }
-  };
+  return handle;
 }
 
 class FactstrMemoryStore {

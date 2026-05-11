@@ -55,7 +55,8 @@ export declare class EventStreamSubscription {
   unsubscribe(): void;
 }
 
-export type EventStreamHandle = (events: EventRecord[]) => boolean | void;
+export type EventStreamHandle =
+  (events: EventRecord[]) => void | boolean | Promise<void | boolean>;
 
 export declare class FactstrMemoryStore {
   constructor();
@@ -74,12 +75,12 @@ export declare class FactstrMemoryStore {
   streamAllDurable(
     durableStream: DurableStream,
     handle: EventStreamHandle,
-  ): EventStreamSubscription;
+  ): Promise<EventStreamSubscription>;
   streamToDurable(
     durableStream: DurableStream,
     query: EventQuery,
     handle: EventStreamHandle,
-  ): EventStreamSubscription;
+  ): Promise<EventStreamSubscription>;
 }
 
 export declare class FactstrPostgresStore {
@@ -102,12 +103,12 @@ export declare class FactstrPostgresStore {
   streamAllDurable(
     durableStream: DurableStream,
     handle: EventStreamHandle,
-  ): EventStreamSubscription;
+  ): Promise<EventStreamSubscription>;
   streamToDurable(
     durableStream: DurableStream,
     query: EventQuery,
     handle: EventStreamHandle,
-  ): EventStreamSubscription;
+  ): Promise<EventStreamSubscription>;
 }
 
 export declare class FactstrSqliteStore {
@@ -127,10 +128,10 @@ export declare class FactstrSqliteStore {
   streamAllDurable(
     durableStream: DurableStream,
     handle: EventStreamHandle,
-  ): EventStreamSubscription;
+  ): Promise<EventStreamSubscription>;
   streamToDurable(
     durableStream: DurableStream,
     query: EventQuery,
     handle: EventStreamHandle,
-  ): EventStreamSubscription;
+  ): Promise<EventStreamSubscription>;
 }
