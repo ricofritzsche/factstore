@@ -56,31 +56,19 @@ Current prebuilt targets:
 
 ```ts
 import {
-  type DurableStream,
   type EventQuery,
   type NewEvent,
-  FactstrMemoryStore,
-  FactstrPostgresStore,
   FactstrSqliteStore,
 } from '@factstr/factstr-node';
 
-const memoryStore = new FactstrMemoryStore();
-const sqliteStore = new FactstrSqliteStore('./factstr.sqlite');
-const postgresStore = new FactstrPostgresStore(process.env.DATABASE_URL!);
-const bootstrappedPostgresStore = FactstrPostgresStore.bootstrap({
-  serverUrl: 'postgres://postgres:postgres@localhost:5432/postgres',
-  databaseName: 'factstr_demo',
-});
+const store = new FactstrSqliteStore('./factstr.sqlite');
 
 const event: NewEvent = {
   event_type: 'item-added',
   payload: { sku: 'ABC-123', quantity: 1 },
 };
 
-memoryStore.append([event]);
-sqliteStore.append([event]);
-postgresStore.append([event]);
-bootstrappedPostgresStore.append([event]);
+store.append([event]);
 
 const query: EventQuery = {
   filters: [
@@ -90,19 +78,65 @@ const query: EventQuery = {
   ],
 };
 
-const result = sqliteStore.query(query);
+const result = store.query(query);
 
 console.log(result.event_records[0]?.occurred_at);
 console.log(result.event_records[0]?.payload);
 ```
 
+## PostgreSQL
+
+### Existing Database
+
+```ts
+import { FactstrPostgresStore } from '@factstr/factstr-node';
+
+const store = new FactstrPostgresStore(process.env.DATABASE_URL!);
+```
+
+Use this when the target database already exists.
+
+### Create Database If Missing
+
+```ts
+import { FactstrPostgresStore } from '@factstr/factstr-node';
+
+const store = FactstrPostgresStore.bootstrap({
+  serverUrl: 'postgres://postgres:postgres@localhost:5432/postgres',
+  databaseName: 'factstr_demo',
+});
+```
+
+Use this when the PostgreSQL server already exists but the target database may not exist yet.
+
 ## Live Streams
 
-`streamAll` and `streamTo` observe only future committed batches after registration becomes active.
+`streamAll(...)` and `streamTo(...)` register synchronously and return `EventStreamSubscription`.
+
+They observe only future committed batches after registration becomes active.
 
 Callbacks receive one committed batch as an array of `EventRecord` values.
 
 `streamTo` applies the same query matching semantics as `query` and delivers only the matching facts from each future committed batch.
+
+Node stream callbacks may return:
+
+- `void`
+- `boolean`
+- `Promise<void>`
+- `Promise<boolean>`
+
+Callback results mean:
+
+- `undefined` or `void`: success
+- `true`: success
+- `false`: failure
+- resolved `undefined` or `true`: success
+- resolved `false`: failure
+- rejected `Promise`: failure
+- synchronous throw: failure
+
+Live callback failure is isolated from append success. A successful append stays committed even if a live callback throws, returns `false`, or rejects later.
 
 `unsubscribe()` stops future deliveries for that stream.
 
@@ -134,9 +168,52 @@ streamAllSubscription.unsubscribe();
 streamToSubscription.unsubscribe();
 ```
 
+## Live vs Durable Stream Registration
+
+`streamAll(...)` and `streamTo(...)` register live streams. They observe only future committed batches after registration becomes active. Registration is synchronous because no replay happens during registration.
+
+```ts
+async function updateProjection(events: EventRecord[]): Promise<void> {
+  console.log('persist projection updates', events);
+}
+
+const subscription = store.streamAll(async (events) => {
+  await updateProjection(events);
+});
+```
+
+The callback may return a `Promise`, but append success is not rolled back if the callback fails.
+
+`streamAllDurable(...)` and `streamToDurable(...)` register durable streams. They may replay existing committed batches before returning the subscription. Registration is asynchronous because FACTSTR waits for replay callback success before advancing the durable cursor.
+
+```ts
+const subscription = await store.streamAllDurable(
+  { name: 'inventory-projector' },
+  async (events) => {
+    await updateProjection(events);
+  },
+);
+```
+
+For durable streams, the cursor advances only after the callback succeeds. If the callback throws, returns `false`, rejects, or resolves to `false`, the cursor does not advance.
+
+API summary:
+
+```ts
+streamAll(handle): EventStreamSubscription
+streamTo(query, handle): EventStreamSubscription
+
+streamAllDurable(name, handle): Promise<EventStreamSubscription>
+streamToDurable(name, query, handle): Promise<EventStreamSubscription>
+```
+
 ## Durable Streams
 
-`streamAllDurable` and `streamToDurable` replay facts strictly after the stored durable cursor and then continue with future committed delivery.
+`streamAllDurable(...)` and `streamToDurable(...)` register asynchronously and return `Promise<EventStreamSubscription>`.
+
+Durable registration must be awaited because it may replay committed facts during registration, and replay waits for callback completion before advancing the durable cursor.
+
+After registration completes, durable streams replay facts strictly after the stored durable cursor and then continue with future committed delivery.
 
 Callbacks receive one committed batch as an array of `EventRecord` values.
 
@@ -149,15 +226,24 @@ Callbacks receive one committed batch as an array of `EventRecord` values.
 ```ts
 import {
   type DurableStream,
+  type EventQuery,
+  type EventRecord,
   FactstrSqliteStore,
 } from '@factstr/factstr-node';
 
 const store = new FactstrSqliteStore('./factstr.sqlite');
 const durableStream: DurableStream = { name: 'inventory-projector' };
 
-const subscription = store.streamAllDurable(durableStream, (events) => {
-  console.log('durable committed batch', events);
-});
+async function updateProjection(events: EventRecord[]): Promise<void> {
+  console.log('persist projection updates', events);
+}
+
+const subscription = await store.streamAllDurable(
+  durableStream,
+  async (events) => {
+    await updateProjection(events);
+  },
+);
 
 store.append([
   {
@@ -168,6 +254,38 @@ store.append([
 
 subscription.unsubscribe();
 ```
+
+```ts
+const query: EventQuery = {
+  filters: [
+    {
+      event_types: ['item-added'],
+    },
+  ],
+};
+
+const filteredSubscription = await store.streamToDurable(
+  durableStream,
+  query,
+  async (events) => {
+    await updateProjection(events);
+  },
+);
+
+filteredSubscription.unsubscribe();
+```
+
+Durable cursor advancement depends on callback success:
+
+- successful sync callback: cursor advances
+- successful async callback: cursor advances after the returned `Promise` resolves successfully
+- thrown error, resolved `false`, or rejected `Promise`: cursor does not advance
+
+Retrying the same durable stream name replays from the last successfully processed sequence.
+
+For future durable deliveries, append success is still not rolled back by callback failure, but durable cursor advancement for that delivery still depends on callback success.
+
+If a durable callback returns a `Promise` that never settles, that delivery stays in flight. `unsubscribe()` stops future deliveries, but it does not convert an already in-flight callback into success. The durable cursor advances only if that in-flight callback eventually succeeds.
 
 ## Conditional Append
 

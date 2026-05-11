@@ -236,7 +236,7 @@ export async function runPostgresStoreSmoke(): Promise<void> {
   ]);
 
   const durableAllReplayBatches: EventRecord[][] = [];
-  const durableAllSubscription = durableStore.streamAllDurable(durableAllStream, (events) => {
+  const durableAllSubscription = await durableStore.streamAllDurable(durableAllStream, (events) => {
     durableAllReplayBatches.push(events);
   });
   await waitForCondition(
@@ -292,14 +292,14 @@ export async function runPostgresStoreSmoke(): Promise<void> {
   const falseReturnDurableStream: DurableStream = {
     name: uniquePostgresSmokeId('postgres-durable-false-return'),
   };
-  const falseReturnCursorSubscription = durableStore.streamAllDurable(
+  const falseReturnCursorSubscription = await durableStore.streamAllDurable(
     falseReturnDurableStream,
     () => {},
   );
   falseReturnCursorSubscription.unsubscribe();
 
   const falseReturnBatches: EventRecord[][] = [];
-  const falseReturnSubscription = durableStore.streamAllDurable(
+  const falseReturnSubscription = await durableStore.streamAllDurable(
     falseReturnDurableStream,
     (events) => {
       falseReturnBatches.push(events);
@@ -325,7 +325,7 @@ export async function runPostgresStoreSmoke(): Promise<void> {
   falseReturnSubscription.unsubscribe();
 
   const recoveredFalseReturnBatches: EventRecord[][] = [];
-  const recoveredFalseReturnSubscription = durableStore.streamAllDurable(
+  const recoveredFalseReturnSubscription = await durableStore.streamAllDurable(
     falseReturnDurableStream,
     (events) => {
       recoveredFalseReturnBatches.push(events);
@@ -351,7 +351,7 @@ export async function runPostgresStoreSmoke(): Promise<void> {
   recoveredFalseReturnSubscription.unsubscribe();
 
   const durableFilteredReplayBatches: EventRecord[][] = [];
-  const durableFilteredSubscription = durableStore.streamToDurable(
+  const durableFilteredSubscription = await durableStore.streamToDurable(
     durableFilteredStream,
     durableDepositQuery,
     (events) => {
@@ -456,7 +456,7 @@ export async function runPostgresStoreSmoke(): Promise<void> {
   );
 
   const bootstrappedDurableBatches: EventRecord[][] = [];
-  const bootstrappedDurableSubscription = bootstrappedStore.streamAllDurable(
+  const bootstrappedDurableSubscription = await bootstrappedStore.streamAllDurable(
     { name: uniquePostgresSmokeId('postgres_bootstrap_durable') },
     (events: EventRecord[]) => {
       bootstrappedDurableBatches.push(events);

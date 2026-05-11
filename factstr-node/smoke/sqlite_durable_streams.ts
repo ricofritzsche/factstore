@@ -32,7 +32,7 @@ async function exerciseSqliteStreamAllDurable(sqliteDatabasePath: string): Promi
     },
   ]);
 
-  const durableSubscription = store.streamAllDurable(durableStream, (events) => {
+  const durableSubscription = await store.streamAllDurable(durableStream, (events) => {
     initialBatches.push(events);
   });
 
@@ -77,7 +77,7 @@ async function exerciseSqliteStreamAllDurable(sqliteDatabasePath: string): Promi
 
   store = new FactstrSqliteStore(sqliteDatabasePath);
   const resumedBatches: EventRecord[][] = [];
-  const resumedSubscription = store.streamAllDurable(durableStream, (events) => {
+  const resumedSubscription = await store.streamAllDurable(durableStream, (events) => {
     resumedBatches.push(events);
   });
 
@@ -120,7 +120,7 @@ async function exerciseSqliteStreamToDurable(sqliteDatabasePath: string): Promis
   ]);
 
   const filteredBatches: EventRecord[][] = [];
-  const filteredSubscription = store.streamToDurable(durableStream, filteredQuery, (events) => {
+  const filteredSubscription = await store.streamToDurable(durableStream, filteredQuery, (events) => {
     filteredBatches.push(events);
   });
 
@@ -167,7 +167,7 @@ async function exerciseSqliteStreamToDurable(sqliteDatabasePath: string): Promis
 
   store = new FactstrSqliteStore(sqliteDatabasePath);
   const resumedFilteredBatches: EventRecord[][] = [];
-  const resumedFilteredSubscription = store.streamToDurable(
+  const resumedFilteredSubscription = await store.streamToDurable(
     durableStream,
     filteredQuery,
     (events) => {

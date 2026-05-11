@@ -1,4 +1,3 @@
-use std::cell::{Cell, RefCell};
 use std::sync::{
     Arc, Mutex,
     mpsc::{self, Receiver, Sender},
@@ -30,8 +29,6 @@ struct ReplayBatch {
 #[derive(Clone, Debug)]
 struct DurableReplayState {
     subscription_id: u64,
-    last_processed_sequence_number: u64,
-    replay_until_sequence_number: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -47,13 +44,18 @@ enum DeliveryCommand {
 }
 
 pub struct MemoryStore {
-    event_records: RefCell<Vec<EventRecord>>,
-    committed_batches: RefCell<Vec<Vec<EventRecord>>>,
-    next_sequence_number: Cell<u64>,
+    state: Mutex<MemoryStoreState>,
     durable_stream_cursors: Arc<Mutex<Vec<DurableStreamCursor>>>,
     subscription_registry: Arc<Mutex<SubscriptionRegistry>>,
     delivery_sender: Sender<DeliveryCommand>,
     delivery_thread: Mutex<Option<JoinHandle<()>>>,
+}
+
+#[derive(Debug)]
+struct MemoryStoreState {
+    event_records: Vec<EventRecord>,
+    committed_batches: Vec<Vec<EventRecord>>,
+    next_sequence_number: u64,
 }
 
 impl Default for MemoryStore {
@@ -83,9 +85,11 @@ impl MemoryStore {
             .expect("memory delivery thread should start");
 
         Self {
-            event_records: RefCell::new(Vec::new()),
-            committed_batches: RefCell::new(Vec::new()),
-            next_sequence_number: Cell::new(1),
+            state: Mutex::new(MemoryStoreState {
+                event_records: Vec::new(),
+                committed_batches: Vec::new(),
+                next_sequence_number: 1,
+            }),
             durable_stream_cursors,
             subscription_registry,
             delivery_sender,
@@ -94,8 +98,13 @@ impl MemoryStore {
     }
 
     fn current_context_version(&self, event_query: &EventQuery) -> Option<u64> {
-        self.event_records
-            .borrow()
+        let state = match self.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
+        state
+            .event_records
             .iter()
             .filter(|event_record| matches_query(event_query, event_record))
             .map(|event_record| event_record.sequence_number)
@@ -110,8 +119,12 @@ impl MemoryStore {
             return Err(EventStoreError::EmptyAppend);
         }
 
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         let committed_count = new_events.len() as u64;
-        let first_sequence_number = self.next_sequence_number.get();
+        let first_sequence_number = state.next_sequence_number;
         let last_sequence_number = first_sequence_number + committed_count - 1;
         let committed_event_records = new_events
             .into_iter()
@@ -124,13 +137,13 @@ impl MemoryStore {
             })
             .collect::<Vec<_>>();
 
-        self.event_records
-            .borrow_mut()
+        state
+            .event_records
             .extend(committed_event_records.iter().cloned());
-        self.committed_batches
-            .borrow_mut()
+        state
+            .committed_batches
             .push(committed_event_records.clone());
-        self.next_sequence_number.set(last_sequence_number + 1);
+        state.next_sequence_number = last_sequence_number + 1;
 
         Ok(CommittedAppend {
             append_result: AppendResult {
@@ -196,12 +209,24 @@ impl MemoryStore {
             &durable_stream_id,
             &normalized_event_query,
         )?;
-        let replay_until_sequence_number = self
-            .event_records
-            .borrow()
-            .last()
-            .map(|event_record| event_record.sequence_number)
-            .unwrap_or(0);
+        let (replay_until_sequence_number, replay_batches) = {
+            let state = match self.state.lock() {
+                Ok(state) => state,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            let replay_until_sequence_number = state
+                .event_records
+                .last()
+                .map(|event_record| event_record.sequence_number)
+                .unwrap_or(0);
+            let replay_batches = load_replay_batches(
+                &state.committed_batches,
+                &normalized_event_query,
+                last_processed_sequence_number,
+                replay_until_sequence_number,
+            );
+            (replay_until_sequence_number, replay_batches)
+        };
 
         let subscription_id = match self.subscription_registry.lock() {
             Ok(mut subscription_registry) => {
@@ -247,18 +272,8 @@ impl MemoryStore {
             }
         };
 
-        let replay_state = DurableReplayState {
-            subscription_id,
-            last_processed_sequence_number,
-            replay_until_sequence_number,
-        };
+        let replay_state = DurableReplayState { subscription_id };
         let subscription = self.build_subscription_handle(replay_state.subscription_id);
-        let replay_batches = load_replay_batches(
-            &self.committed_batches.borrow(),
-            &normalized_event_query,
-            replay_state.last_processed_sequence_number,
-            replay_state.replay_until_sequence_number,
-        );
         let delivery_runtime = build_delivery_runtime("factstr-memory durable replay")?;
 
         for replay_batch in replay_batches {
@@ -365,10 +380,18 @@ impl Drop for MemoryStore {
 
 impl EventStore for MemoryStore {
     fn query(&self, event_query: &EventQuery) -> Result<QueryResult, EventStoreError> {
-        let current_context_version = self.current_context_version(event_query);
-        let event_records: Vec<EventRecord> = self
+        let state = match self.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let current_context_version = state
             .event_records
-            .borrow()
+            .iter()
+            .filter(|event_record| matches_query(event_query, event_record))
+            .map(|event_record| event_record.sequence_number)
+            .next_back();
+        let event_records: Vec<EventRecord> = state
+            .event_records
             .iter()
             .filter(|event_record| matches_query(event_query, event_record))
             .filter(|event_record| {

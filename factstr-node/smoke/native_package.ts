@@ -44,20 +44,22 @@ type DirectNativeSqliteStore = {
       actual_context_version?: bigint | null;
     } | null;
   };
-  streamAll(handle: (events: EventRecord[]) => void): { unsubscribe(): void };
+  streamAll(
+    handle: (events: EventRecord[]) => void | boolean | Promise<void | boolean>,
+  ): { unsubscribe(): void };
   streamTo(
     query: EventQuery,
-    handle: (events: EventRecord[]) => void,
+    handle: (events: EventRecord[]) => void | boolean | Promise<void | boolean>,
   ): { unsubscribe(): void };
   streamAllDurable(
     durableStream: DurableStream,
-    handle: (events: EventRecord[]) => void,
-  ): { unsubscribe(): void };
+    handle: (events: EventRecord[]) => void | boolean | Promise<void | boolean>,
+  ): Promise<{ unsubscribe(): void }>;
   streamToDurable(
     durableStream: DurableStream,
     query: EventQuery,
-    handle: (events: EventRecord[]) => void,
-  ): { unsubscribe(): void };
+    handle: (events: EventRecord[]) => void | boolean | Promise<void | boolean>,
+  ): Promise<{ unsubscribe(): void }>;
 };
 
 export type NativeFactstrSqliteStoreModule = {
